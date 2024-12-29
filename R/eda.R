@@ -288,6 +288,7 @@ EDA <- R6::R6Class(
     #' @param col_y The name of the second numeric column.
     #' @param col_z The name of the third numeric column.
     #' @param rank_values Logical. Whether to transform variables to their percentile ranks. Defaults to TRUE.
+    #' @param theme Name of theme for `echarts4r` plot
     #' @return An `echarts4r` 3D scatter plot.
     #' @export
     generate_3d_scatter_plot = function(
