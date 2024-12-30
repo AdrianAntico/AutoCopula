@@ -152,35 +152,23 @@ ModelFitter <- R6::R6Class(
     fit_models = function(model_names) {
       if (length(model_names) == 0) stop("You must specify at least one model name.")
 
-      results <- lapply(model_names, function(model_name) {
-        fit <- private$fit_model(model_name)
-        if (!is.null(fit)) {
-          list(
-            Model = model_name,
-            Fit = fit,
-            Metrics = data.table::data.table(
-              LogLik = logLik(fit),
-              AIC = AIC(fit),
-              BIC = BIC(fit)
-            )
-          )
-        } else {
-          list(
-            Model = model_name,
-            Fit = NULL,
-            Metrics = data.table::data.table(
-              LogLik = NA,
-              AIC = NA,
-              BIC = NA
-            )
-          )
-        }
+      lapply(model_names, function(model_name) {
+        tryCatch(
+          {
+            # Fit the model using the private method
+            fit <- private$fit_model(model_name)
+
+            # Store the result in the fit_results list
+            self$fit_results[[model_name]] <- fit
+          },
+          error = function(e) {
+            message(sprintf("Error fitting model '%s': %s", model_name, e$message))
+          }
+        )
       })
 
-      # Organize results into a named list
-      results_named <- setNames(results, model_names)
-
-      return(results_named)
+      # No return value; results are stored in self$fit_results
+      invisible(NULL)
     },
 
     #' @description Lists available copula models in the library.
@@ -197,6 +185,7 @@ ModelFitter <- R6::R6Class(
 
   private = list(
     fit_model = function(model_name) {
+      # Validate that the model exists in the copula library
       if (!model_name %in% names(self$copula_library)) {
         stop("Model not found in library. Use list_models() to see available models.")
       }
@@ -204,7 +193,10 @@ ModelFitter <- R6::R6Class(
       # Transform data to pseudo-observations
       data_transformed <- copula::pobs(as.matrix(self$data))
 
+      # Retrieve model fitting function from the copula library
       model_info <- self$copula_library[[model_name]]
+
+      # Fit the model using the specified fitting function
       fit <- tryCatch({
         model_info$fit_function(data_transformed)
       }, error = function(e) {
@@ -212,9 +204,9 @@ ModelFitter <- R6::R6Class(
         NULL
       })
 
+      # Return the fitted model (or NULL if fitting failed)
       if (!is.null(fit)) {
         message("Successfully fitted model: ", model_name)
-        self$fit_results[[model_name]] <- fit
       }
       return(fit)
     }
