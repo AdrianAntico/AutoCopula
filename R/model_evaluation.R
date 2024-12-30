@@ -88,10 +88,9 @@ ModelEvaluation <- R6::R6Class(
 
     #' @description Generate overlay plot for observed vs simulated pseudo-observations.
     #' @param model_name The name of the model for which to generate the plot.
-    #' @param var the variable you want to compare to simulated values
     #' @param theme name of theme for `echarts4r`
     #' @return An echarts4r plot object.
-    generate_overlay_plot = function(model_name, var, theme = "westeros") {
+    generate_overlay_plot = function(model_name, theme = "westeros") {
       fit <- self$fit_results[[model_name]]
       tryCatch({
         # Generate pseudo-observations from the data
