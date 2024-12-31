@@ -94,6 +94,9 @@ ModelScorer <- R6::R6Class(
 
       tryCatch({
         if (parallel) {
+          # Load the future.apply package
+          require(future.apply)
+
           # Set the number of threads
           num_threads <- if (is.null(threads)) future::availableCores() - 1 else min(threads, future::availableCores())
           message(sprintf("Using %d threads for parallel processing.", num_threads))
@@ -101,8 +104,8 @@ ModelScorer <- R6::R6Class(
           # Configure future backend
           future::plan(future::multisession, workers = num_threads)
 
-          # Parallel processing with future_lapply
-          results <- future.apply::future_lapply(seq_len(batches), process_batch)
+          # Parallel processing with future_lapply, ensuring proper random number seeding
+          results <- future.apply::future_lapply(seq_len(batches), process_batch, future.seed = TRUE)
         } else {
           # Sequential processing
           results <- lapply(seq_len(batches), process_batch)
