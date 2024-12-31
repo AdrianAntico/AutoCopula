@@ -1,10 +1,10 @@
-#' AutoCopulaScorer
+#' ModelScorer
 #'
 #' An R6 class to score copula models on new data, perform predictions,
 #' generate simulations, and visualize the results.
 #' @export
-AutoCopulaScorer <- R6::R6Class(
-  "AutoCopulaScorer",
+ModelScorer <- R6::R6Class(
+  "ModelScorer",
   public = list(
     #' @field fit_results A list of fitted copula model objects.
     fit_results = NULL,
@@ -20,7 +20,7 @@ AutoCopulaScorer <- R6::R6Class(
 
     #' @param fit_results A list of fitted copula model objects.
     #' @param data data for scoring a single instance of copula models
-    #' @return A new instance of the AutoCopulaScorer class.
+    #' @return A new instance of the ModelScorer class.
     initialize = function(fit_results, data) {
       if (!is.list(fit_results)) stop("fit_results must be a list of copula model objects.")
       if (!data.table::is.data.table(data)) stop("data must be a data.table.")
@@ -61,12 +61,67 @@ AutoCopulaScorer <- R6::R6Class(
       })
     },
 
-    #' @description Generate large-scale simulations using the entire model.
-    #' @param model_name Name of the model to use.
-    #' @param n Number of instances to simulate.
-    #' @return A data.table of simulated values.
-    large_scale_simulation = function(model_name, n = 10000) {
-      self$batch_prediction(model_name, n)
+    #' @description Perform large-scale simulations using fitted copula models.
+    #' The simulation can be processed sequentially or in parallel, with user-defined batch sizes and thread counts.
+    #'
+    #' @param model_name A string specifying the name of the fitted model to use.
+    #' @param batches An integer specifying the number of batches to process. Default is 10.
+    #' @param batch_size An integer specifying the number of samples per batch. Default is 1000.
+    #' @param parallel A logical value indicating whether to use parallel processing. Default is FALSE.
+    #' @param threads An integer specifying the number of threads to use for parallel processing.
+    #' If NULL, defaults to the number of available cores minus one.
+    #'
+    #' @return A `data.table` containing all simulated values, with a `BatchID` column to indicate the batch each row belongs to.
+    #'
+    #' @details This method generates large-scale simulations by splitting the total number of samples
+    #' into smaller batches. If `parallel` is set to TRUE, it uses the `future.apply` package to
+    #' process batches in parallel. On sequential processing, batches are processed one at a time.
+    #' The function ensures that all parallel sessions are closed upon completion or in the case of an error.
+    #'
+    #' @export
+    large_scale_simulation = function(model_name, batches = 10, batch_size = 1000, parallel = FALSE, threads = NULL) {
+      fit <- self$fit_results[[model_name]]
+
+      # Function to process a single batch
+      process_batch <- function(batch_id) {
+        message(sprintf("Processing batch %d", batch_id))
+        batch <- copula::rCopula(batch_size, fit@copula)
+        colnames(batch) <- colnames(self$data)
+        batch_dt <- data.table::as.data.table(batch)
+        batch_dt[, BatchID := batch_id]
+        return(batch_dt)
+      }
+
+      tryCatch({
+        if (parallel) {
+          # Set the number of threads
+          num_threads <- if (is.null(threads)) future::availableCores() - 1 else min(threads, future::availableCores())
+          message(sprintf("Using %d threads for parallel processing.", num_threads))
+
+          # Configure future backend
+          future::plan(future::multisession, workers = num_threads)
+
+          # Parallel processing with future_lapply
+          results <- future.apply::future_lapply(seq_len(batches), process_batch)
+        } else {
+          # Sequential processing
+          results <- lapply(seq_len(batches), process_batch)
+        }
+
+        # Combine all batches into one data.table
+        final_result <- data.table::rbindlist(results)
+        self$scored_data[[paste0(model_name, "_large_simulation")]] <- final_result
+        return(final_result)
+      }, error = function(e) {
+        message("Error in large-scale simulation for model '", model_name, "': ", e$message)
+        NULL
+      }, finally = {
+        # Ensure that all workers are shut down
+        if (parallel) {
+          message("Closing all parallel workers.")
+          future::plan("sequential")
+        }
+      })
     },
 
     #' @description Generate conditional predictions for a subset of variables.

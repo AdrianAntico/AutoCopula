@@ -15,7 +15,9 @@ Imports:
     echarts4r,
     copula,
     VineCopula,
-    evd
+    evd,
+    future,
+    future.apply
 Suggests:
     testthat,
     here,
