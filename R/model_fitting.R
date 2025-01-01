@@ -12,6 +12,7 @@ ModelFitter <- R6::R6Class(
 
     #' @field copula_library A pre-defined library of copula models.
     copula_library = list(
+
       # Multivariate Copulas from copula
       Gaussian = list(
         description = "Gaussian copula with a correlation matrix.",
@@ -102,23 +103,6 @@ ModelFitter <- R6::R6Class(
         fit_function = function(data) {
           if (ncol(data) != 2) stop("BB4 copula requires exactly 2 dimensions.")
           VineCopula::BiCopEst(data[, 1], data[, 2], family = 10)
-        }
-      ),
-
-      # Non-parametric Copulas
-      Empirical = list(
-        description = "Empirical copula for non-parametric modeling.",
-        fit_function = function(data) {
-          copula::empCopula(as.matrix(data))
-        }
-      ),
-
-      # Additional copulas from the copBasic package
-      AMH = list(
-        description = "Ali-Mikhail-Haq copula for modeling weak dependencies.",
-        fit_function = function(data) {
-          if (ncol(data) != 2) stop("AMH copula requires exactly 2 dimensions.")
-          copBasic::fitCOP(data, cop = copBasic::AMHcop)
         }
       ),
 

@@ -9,9 +9,6 @@ ModelScorer <- R6::R6Class(
     #' @field fit_results A list of fitted copula model objects.
     fit_results = NULL,
 
-    #' @field scored_data A list of scored results (e.g., predictions, simulations).
-    scored_data = list(),
-
     #' @field data Scoring data
     data = list(),
 
@@ -53,7 +50,6 @@ ModelScorer <- R6::R6Class(
         pred <- copula::rCopula(n, fit@copula)
         colnames(pred) <- colnames(self$data)
         result <- data.table::as.data.table(pred)
-        self$scored_data[[model_name]] <- result
         return(result)
       }, error = function(e) {
         message("Error in batch prediction for model '", model_name, "': ", e$message)
@@ -113,7 +109,6 @@ ModelScorer <- R6::R6Class(
 
         # Combine all batches into one data.table
         final_result <- data.table::rbindlist(results)
-        self$scored_data[[paste0(model_name, "_large_simulation")]] <- final_result
         return(final_result)
       }, error = function(e) {
         message("Error in large-scale simulation for model '", model_name, "': ", e$message)
@@ -130,14 +125,42 @@ ModelScorer <- R6::R6Class(
     #' @description Generate conditional predictions for a subset of variables.
     #' @param model_name Name of the model to use.
     #' @param known_values A named list of known variable values.
+    #' @param n Number of samples to get
     #' @return A data.table of conditional predictions.
-    conditional_prediction = function(model_name, known_values) {
+    conditional_prediction = function(model_name, known_values, n = 1) {
       fit <- self$fit_results[[model_name]]
+      copula_model <- fit@copula
+
       tryCatch({
-        # Perform conditional sampling (to be implemented)
-        # Placeholder logic: Replace with real conditional copula sampling
-        conditioned_data <- copula::conditionalCopula(fit@copula, known_values)
-        data.table::as.data.table(conditioned_data)
+        # Ensure known_values is valid
+        if (!all(names(known_values) %in% colnames(self$data))) {
+          warning("Some known_values do not match column names in the dataset. Returning NULL.")
+          return(NULL)
+        }
+
+        # Delegate to the appropriate private method based on copula type
+        if (inherits(copula_model, "normalCopula")) {
+          return(private$conditional_gaussian(fit, known_values, n))
+        } else if (inherits(copula_model, "tCopula")) {
+          return(private$conditional_t(fit, known_values, n))
+        } else if (inherits(copula_model, "claytonCopula")) {
+          return(private$conditional_clayton(fit, known_values, n))
+        } else if (inherits(copula_model, "gumbelCopula")) {
+          return(private$conditional_gumbel(fit, known_values, n))
+        } else if (inherits(copula_model, "frankCopula")) {
+          return(private$conditional_frank(fit, known_values, n))
+        } else if (inherits(copula_model, "joeCopula")) {
+          return(private$conditional_joe(fit, known_values, n))
+        } else if (inherits(copula_model, "galambosCopula")) {
+          return(private$conditional_galambos(fit, known_values, n))
+        } else if (inherits(copula_model, "huslerReissCopula")) {
+          return(private$conditional_huslerreiss(fit, known_values, n))
+        } else if (inherits(copula_model, "tevCopula")) {
+          return(private$conditional_tev(fit, known_values, n))
+        } else {
+          message("Conditional sampling is not implemented for this copula type.")
+          return(NULL)
+        }
       }, error = function(e) {
         message("Error in conditional prediction for model '", model_name, "': ", e$message)
         NULL
@@ -291,6 +314,394 @@ ModelScorer <- R6::R6Class(
         echarts4r::e_density(name = "Extreme Event Density") |>
         echarts4r::e_title("Stress Testing - Extreme Events") |>
         echarts4r::e_theme("dark")
+    }
+  ),
+
+  private = list(
+
+    # Gaussian Conditional Sampling
+    conditional_gaussian = function(fit, known_values, n = 1) {
+      copula_model <- fit@copula
+      dim <- dim(copula_model)
+
+      # Reconstruct the correlation matrix
+      corr <- copula::getSigma(copula_model)
+
+      # Match known variable indices
+      known_vars <- names(known_values)
+      known_indices <- match(known_vars, colnames(self$data))
+      remaining_indices <- setdiff(seq_len(dim), known_indices)
+
+      # Convert known_values to pseudo-observations
+      known_u <- sapply(known_vars, function(col) {
+        value <- known_values[[col]]
+        if (!col %in% colnames(self$data)) {
+          message(paste0("Column '", col, "' not found in dataset."))
+          return(NULL)
+        }
+        ecdf(self$data[[col]])(value)  # Convert to pseudo-observations
+      })
+
+      # Extract and partition the correlation matrix
+      corr_11 <- corr[known_indices, known_indices, drop = FALSE]
+      corr_12 <- corr[known_indices, remaining_indices, drop = FALSE]
+      corr_22 <- corr[remaining_indices, remaining_indices, drop = FALSE]
+      corr_21 <- t(corr_12)
+
+      # Compute the conditional mean and covariance
+      inv_corr_11 <- solve(corr_11)
+      conditional_mean <- corr_21 %*% inv_corr_11 %*% known_u
+      conditional_cov <- corr_22 - corr_21 %*% inv_corr_11 %*% corr_12
+
+      # Generate conditional samples
+      conditional_samples <- mvtnorm::rmvnorm(n, mean = as.vector(conditional_mean), sigma = conditional_cov)
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = dim)
+      result[, known_indices] <- matrix(rep(known_u, each = n), nrow = n)
+      result[, remaining_indices] <- conditional_samples
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # t Conditional Sampling
+    conditional_t = function(fit, known_values, n = 1) {
+      copula_model <- fit@copula
+      dim <- dim(copula_model)
+      df <- copula_model@parameters[[2]]  # Degrees of freedom
+
+      # Reconstruct the correlation matrix
+      corr <- copula::getSigma(copula_model)
+
+      # Match known variable indices
+      known_vars <- names(known_values)
+      known_indices <- match(known_vars, colnames(self$data))
+      remaining_indices <- setdiff(seq_len(dim), known_indices)
+
+      # Convert known_values to pseudo-observations
+      known_u <- sapply(known_vars, function(col) {
+        value <- known_values[[col]]
+        if (!col %in% colnames(self$data)) {
+          message(paste0("Column '", col, "' not found in dataset."))
+          return(NULL)
+        }
+        ecdf(self$data[[col]])(value)  # Convert to pseudo-observations
+      })
+
+      # Extract and partition the correlation matrix
+      corr_11 <- corr[known_indices, known_indices, drop = FALSE]
+      corr_12 <- corr[known_indices, remaining_indices, drop = FALSE]
+      corr_22 <- corr[remaining_indices, remaining_indices, drop = FALSE]
+      corr_21 <- t(corr_12)
+
+      # Compute the conditional mean and covariance
+      inv_corr_11 <- solve(corr_11)
+      conditional_mean <- corr_21 %*% inv_corr_11 %*% known_u
+      conditional_cov <- corr_22 - corr_21 %*% inv_corr_11 %*% corr_12
+
+      # Generate conditional samples using mvtnorm::rmvt
+      conditional_samples <- mvtnorm::rmvt(
+        n = n,
+        delta = as.vector(conditional_mean),
+        sigma = conditional_cov,
+        df = df
+      )
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = dim)
+      result[, known_indices] <- matrix(rep(known_u, each = n), nrow = n)
+      result[, remaining_indices] <- conditional_samples
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # Clayton Conditional Sampling
+    conditional_clayton = function(fit, known_values, n = 1) {
+      copula_model <- fit@copula
+      theta <- copula_model@parameters[[1]]  # Clayton parameter
+      dim <- dim(copula_model)
+
+      # Match known variable indices
+      known_vars <- names(known_values)
+      known_indices <- match(known_vars, colnames(self$data))
+      remaining_indices <- setdiff(seq_len(dim), known_indices)
+
+      # Convert known_values to pseudo-observations
+      known_u <- sapply(known_vars, function(col) {
+        value <- known_values[[col]]
+        if (!col %in% colnames(self$data)) {
+          message(paste0("Column '", col, "' not found in dataset."))
+          return(NULL)
+        }
+        ecdf(self$data[[col]])(value)  # Convert to pseudo-observations
+      })
+
+      # Compute the conditional distribution
+      V <- sum(known_u^(-theta)) - length(known_u) + 1  # Intermediate value
+      conditional_samples <- replicate(n, {
+        W <- stats::runif(length(remaining_indices))
+        (V + W)^(-1 / theta)
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = dim)
+      result[, known_indices] <- matrix(rep(known_u, each = n), nrow = n)
+      result[, remaining_indices] <- t(conditional_samples)
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # Gumbel Conditional Sampling
+    conditional_gumbel = function(fit, known_values, n = 1) {
+      copula_model <- fit@copula
+      theta <- copula_model@parameters[[1]]  # Gumbel parameter
+      dim <- dim(copula_model)
+
+      # Match known variable indices
+      known_vars <- names(known_values)
+      known_indices <- match(known_vars, colnames(self$data))
+      remaining_indices <- setdiff(seq_len(dim), known_indices)
+
+      # Convert known_values to pseudo-observations
+      known_u <- sapply(known_vars, function(col) {
+        value <- known_values[[col]]
+        if (!col %in% colnames(self$data)) {
+          message(paste0("Column '", col, "' not found in dataset."))
+          return(NULL)
+        }
+        ecdf(self$data[[col]])(value)  # Convert to pseudo-observations
+      })
+
+      # Compute the conditional distribution
+      V <- sum((-log(known_u))^(1 / theta))  # Intermediate value
+      conditional_samples <- replicate(n, {
+        W <- stats::runif(length(remaining_indices))
+        exp(-(V - log(W))^theta)
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = dim)
+      result[, known_indices] <- matrix(rep(known_u, each = n), nrow = n)
+      result[, remaining_indices] <- t(conditional_samples)
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # Frank Conditional Sampling
+    conditional_frank = function(fit, known_values, n = 1) {
+      copula_model <- fit@copula
+      theta <- copula_model@parameters[[1]]  # Frank parameter
+      dim <- dim(copula_model)
+
+      # Match known variable indices
+      known_vars <- names(known_values)
+      known_indices <- match(known_vars, colnames(self$data))
+      remaining_indices <- setdiff(seq_len(dim), known_indices)
+
+      # Convert known_values to pseudo-observations
+      known_u <- sapply(known_vars, function(col) {
+        value <- known_values[[col]]
+        if (!col %in% colnames(self$data)) {
+          message(paste0("Column '", col, "' not found in dataset."))
+          return(NULL)
+        }
+        ecdf(self$data[[col]])(value)  # Convert to pseudo-observations
+      })
+
+      # Compute intermediate value (joint generator evaluation)
+      D_inv <- function(x) -log((exp(-theta * x) - 1) / (exp(-theta) - 1))
+      V <- -log(1 + (exp(-theta * sum(D_inv(known_u))) - 1) / (exp(-theta) - 1))
+
+      # Generate conditional samples
+      conditional_samples <- replicate(n, {
+        W <- stats::runif(length(remaining_indices))
+        -log(1 + (exp(-theta * V) * (W - 1)) / (W * (exp(-theta) - 1))) / theta
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = dim)
+      result[, known_indices] <- matrix(rep(known_u, each = n), nrow = n)
+      result[, remaining_indices] <- t(conditional_samples)
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # Joe Conditional Sampling
+    conditional_joe = function(fit, known_values, n = 1) {
+      copula_model <- fit@copula
+      theta <- copula_model@parameters[[1]]  # Joe parameter
+      dim <- dim(copula_model)
+
+      # Match known variable indices
+      known_vars <- names(known_values)
+      known_indices <- match(known_vars, colnames(self$data))
+      remaining_indices <- setdiff(seq_len(dim), known_indices)
+
+      # Convert known_values to pseudo-observations
+      known_u <- sapply(known_vars, function(col) {
+        value <- known_values[[col]]
+        if (!col %in% colnames(self$data)) {
+          message(paste0("Column '", col, "' not found in dataset."))
+          return(NULL)
+        }
+        ecdf(self$data[[col]])(value)  # Convert to pseudo-observations
+      })
+
+      # Compute intermediate value (generator evaluation for known values)
+      V <- sum((1 - known_u)^(-theta)) - length(known_u) + 1  # Joint dependence value
+
+      # Generate conditional samples
+      conditional_samples <- replicate(n, {
+        W <- stats::runif(length(remaining_indices))
+        1 - (V + (1 - W)^(-theta))^(-1 / theta)
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = dim)
+      result[, known_indices] <- matrix(rep(known_u, each = n), nrow = n)
+      result[, remaining_indices] <- t(conditional_samples)
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # Galambos Conditional Sampling
+    conditional_galambos = function(fit, known_values, n = 1) {
+      copula_model <- fit@copula
+      theta <- copula_model@parameters[[1]]  # Galambos parameter
+      dim <- dim(copula_model)
+
+      # Match known variable indices
+      known_vars <- names(known_values)
+      known_indices <- match(known_vars, colnames(self$data))
+      remaining_indices <- setdiff(seq_len(dim), known_indices)
+
+      # Convert known_values to pseudo-observations
+      known_u <- sapply(known_vars, function(col) {
+        value <- known_values[[col]]
+        if (!col %in% colnames(self$data)) {
+          message(paste0("Column '", col, "' not found in dataset."))
+          return(NULL)
+        }
+        ecdf(self$data[[col]])(value)  # Convert to pseudo-observations
+      })
+
+      # Galambos copula generator function
+      generator <- function(t) (-log(t))^(1 / theta)
+
+      # Compute conditional dependence for known values
+      conditional_cdf <- function(remaining_var, known_u) {
+        partial_sum <- sum(generator(known_u))
+        (-partial_sum + generator(remaining_var))^(-theta)
+      }
+
+      # Generate conditional samples
+      conditional_samples <- replicate(n, {
+        W <- runif(length(remaining_indices))  # Generate random uniform values
+        conditional_cdf(W, known_u)
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = dim)
+      result[, known_indices] <- matrix(rep(known_u, each = n), nrow = n)
+      result[, remaining_indices] <- t(conditional_samples)
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # Husler Reiss Conditional Sampling
+    conditional_huslerreiss = function(fit, known_values, n = 1) {
+      copula_model <- fit@copula
+      alpha <- copula_model@parameters[[1]]  # Alpha parameter
+      if (length(known_values) != 1) stop("Hüsler-Reiss copula is bivariate; only one variable can be conditioned.")
+
+      # Extract known variable and its index
+      known_var <- names(known_values)[1]
+      known_index <- match(known_var, colnames(self$data))
+      remaining_index <- setdiff(1:2, known_index)
+
+      # Convert known_values to pseudo-observations
+      known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
+
+      # Simulate conditional samples
+      conditional_samples <- replicate(n, {
+        # Generate a random value for the remaining variable
+        W <- runif(1)  # Random uniform value
+
+        # Conditional CDF for the remaining variable
+        l2 <- 1 / alpha
+        if (remaining_index == 1) {
+          # Solve for u1 given u2
+          u1 <- W
+          u2 <- known_u
+          l1 <- log(u1 * u2)
+          l3 <- log(u2)
+          l32 <- l3 / l1
+          l33 <- 1 - l32
+          l4 <- log(l32 / (l33))
+          l5 <- l2 + 0.5 * alpha * l4
+          l6 <- l2 - 0.5 * alpha * l4
+        } else {
+          # Solve for u2 given u1
+          u2 <- W
+          u1 <- known_u
+          l1 <- log(u1 * u2)
+          l3 <- log(u1)
+          l32 <- l3 / l1
+          l33 <- 1 - l32
+          l4 <- log(l32 / (l33))
+          l5 <- l2 + 0.5 * alpha * l4
+          l6 <- l2 - 0.5 * alpha * l4
+        }
+        exp(l1 * (l32 * pnorm(l5) + (l33) * pnorm(l6)))
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = 2)
+      result[, known_index] <- rep(known_u, n)
+      result[, remaining_index] <- conditional_samples
+      result_dt <- as.data.table(result)
+      setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # tEV Conditional Sampling
+    conditional_tev = function(fit, known_values, n = 1) {
+      copula_model <- fit@copula
+      rho <- copula_model@parameters[[1]]  # Scalar correlation parameter
+      df <- copula_model@parameters[[2]]  # Degrees of freedom
+
+      # Match known variable indices
+      known_vars <- names(known_values)
+      if (length(known_vars) != 1) stop("t-EV copula currently supports conditioning on a single variable.")
+      known_index <- match(known_vars, colnames(self$data))
+      remaining_index <- setdiff(1:2, known_index)
+
+      # Convert known_values to pseudo-observations
+      known_u <- ecdf(self$data[[known_vars]])(known_values[[1]])
+      known_t <- qt(known_u, df = df)  # Transform to t-distribution quantile
+
+      # Compute conditional mean and variance for the remaining variable
+      cond_mean <- rho * known_t
+      cond_var <- 1 - rho^2
+
+      # Generate samples from the conditional t-distribution
+      conditional_samples <- rt(n, df = df) * sqrt(cond_var) + cond_mean
+      conditional_u <- pt(conditional_samples, df = df)  # Transform back to pseudo-observations
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = 2)
+      result[, known_index] <- rep(known_u, n)
+      result[, remaining_index] <- conditional_u
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
     }
   )
 )
