@@ -3,3 +3,4 @@
 export(EDA)
 export(ModelEvaluation)
 export(ModelFitter)
+export(ModelScorer)

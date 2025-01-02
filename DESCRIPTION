@@ -15,7 +15,6 @@ Imports:
     echarts4r,
     copula,
     VineCopula,
-    evd,
     future,
     future.apply
 Suggests:

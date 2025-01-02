@@ -31,8 +31,21 @@ ModelScorer <- R6::R6Class(
     single_instance_prediction = function(model_name) {
       fit <- self$fit_results[[model_name]]
       tryCatch({
-        pred <- copula::rCopula(1, fit@copula)
-        colnames(pred) <- colnames(self$data)
+        # Check if the model is a Vine Copula model
+        if (inherits(fit, "BiCop")) {
+          # Generate a single prediction using VineCopula's BiCopSim
+          pred <- VineCopula::BiCopSim(1, family = fit$family, par = fit$par, par2 = fit$par2)
+        } else if (!is.null(fit@copula)) {
+          # Generate a single prediction using the copula package
+          pred <- copula::rCopula(1, fit@copula)
+        } else {
+          stop("Unsupported copula type for model '", model_name, "'.")
+        }
+
+        # Assign column names if data is available
+        if (!is.null(self$data)) {
+          colnames(pred) <- colnames(self$data)
+        }
         as.vector(pred)
       }, error = function(e) {
         message("Error in single instance prediction for model '", model_name, "': ", e$message)
@@ -47,8 +60,22 @@ ModelScorer <- R6::R6Class(
     batch_prediction = function(model_name, n = 100) {
       fit <- self$fit_results[[model_name]]
       tryCatch({
-        pred <- copula::rCopula(n, fit@copula)
-        colnames(pred) <- colnames(self$data)
+        if (inherits(fit, "BiCop")) {
+          # Generate batch predictions using VineCopula's BiCopSim
+          pred <- VineCopula::BiCopSim(n, family = fit$family, par = fit$par, par2 = fit$par2)
+        } else if (!is.null(fit@copula)) {
+          # Generate batch predictions using the copula package
+          pred <- copula::rCopula(n, fit@copula)
+        } else {
+          stop("Unsupported copula type for model '", model_name, "'.")
+        }
+
+        # Assign column names if data is available
+        if (!is.null(self$data)) {
+          colnames(pred) <- colnames(self$data)
+        }
+
+        # Convert to data.table and return
         result <- data.table::as.data.table(pred)
         return(result)
       }, error = function(e) {
@@ -78,16 +105,6 @@ ModelScorer <- R6::R6Class(
     large_scale_simulation = function(model_name, batches = 10, batch_size = 1000, parallel = FALSE, threads = NULL) {
       fit <- self$fit_results[[model_name]]
 
-      # Function to process a single batch
-      process_batch <- function(batch_id) {
-        message(sprintf("Processing batch %d", batch_id))
-        batch <- copula::rCopula(batch_size, fit@copula)
-        colnames(batch) <- colnames(self$data)
-        batch_dt <- data.table::as.data.table(batch)
-        batch_dt[, BatchID := batch_id]
-        return(batch_dt)
-      }
-
       tryCatch({
         if (parallel) {
           # Load the future.apply package
@@ -101,10 +118,10 @@ ModelScorer <- R6::R6Class(
           future::plan(future::multisession, workers = num_threads)
 
           # Parallel processing with future_lapply, ensuring proper random number seeding
-          results <- future.apply::future_lapply(seq_len(batches), process_batch, future.seed = TRUE)
+          results <- future.apply::future_lapply(seq_len(batches), private$process_batch, future.seed = TRUE)
         } else {
           # Sequential processing
-          results <- lapply(seq_len(batches), process_batch)
+          results <- lapply(seq_len(batches), private$process_batch)
         }
 
         # Combine all batches into one data.table
@@ -129,7 +146,21 @@ ModelScorer <- R6::R6Class(
     #' @return A data.table of conditional predictions.
     conditional_prediction = function(model_name, known_values, n = 1) {
       fit <- self$fit_results[[model_name]]
-      copula_model <- fit@copula
+      if (model_name %in% c(
+        "tCopula",
+        "claytonCopula",
+        "gumbelCopula",
+        "frankCopula",
+        "joeCopula",
+        "galambosCopula",
+        "huslerReissCopula",
+        "tevCopula",
+        "plackettCopula",
+        "fgmCopula")) {
+        copula_model <- fit@copula
+      } else {
+        copula_model <- "vine"
+      }
 
       tryCatch({
         # Ensure known_values is valid
@@ -157,6 +188,40 @@ ModelScorer <- R6::R6Class(
           return(private$conditional_huslerreiss(fit, known_values, n))
         } else if (inherits(copula_model, "tevCopula")) {
           return(private$conditional_tev(fit, known_values, n))
+        } else if (inherits(copula_model, "plackettCopula")) {
+          return(private$conditional_plackett(fit, known_values, n))
+        } else if (inherits(copula_model, "fgmCopula")) {
+          return(private$conditional_fgm(fit, known_values, n))
+        } else if (model_name == "BB1") {
+          return(private$conditional_bb1(fit, known_values, n))
+        } else if (model_name == "BB6") {
+          return(private$conditional_bb6(fit, known_values, n))
+        } else if (model_name == "BB7") {
+          return(private$conditional_bb7(fit, known_values, n))
+        } else if (model_name == "BB8") {
+          return(private$conditional_bb8(fit, known_values, n))
+        } else if (model_name == "Rotated Clayton (180)") {
+          return(private$conditional_rotated_clayton_180(fit, known_values, n))
+        } else if (model_name == "Rotated Gumbel (180)") {
+          return(private$conditional_rotated_gumbel_180(fit, known_values, n))
+        } else if (model_name == "Rotated Joe (180)") {
+          return(private$conditional_rotated_joe_180(fit, known_values, n))
+        } else if (model_name == "Rotated BB1 (180)") {
+          return(private$conditional_rotated_bb1_180(fit, known_values, n))
+        } else if (model_name == "Rotated BB6 (180)") {
+          return(private$conditional_rotated_bb6_180(fit, known_values, n))
+        } else if (model_name == "Rotated BB7 (180)") {
+          return(private$conditional_rotated_bb7_180(fit, known_values, n))
+        } else if (model_name == "Rotated BB8 (180)") {
+          return(private$conditional_rotated_bb8_180(fit, known_values, n))
+        } else if (model_name == "Tawn Type 1") {
+          return(private$conditional_tawn_type1(fit, known_values, n))
+        } else if (model_name == "Rotated Tawn Type 1 (180)") {
+          return(private$conditional_rotated_tawn_type1_180(fit, known_values, n))
+        } else if (model_name == "Tawn Type 2") {
+          return(private$conditional_tawn_type2(fit, known_values, n))
+        } else if (model_name == "Rotated Tawn Type 2 (180)") {
+          return(private$conditional_tawn_type2(fit, known_values, n))
         } else {
           message("Conditional sampling is not implemented for this copula type.")
           return(NULL)
@@ -318,6 +383,28 @@ ModelScorer <- R6::R6Class(
   ),
 
   private = list(
+
+    # Private method for processing a single batch in batch_predictions()
+    process_batch = function(batch_id) {
+      message(sprintf("Processing batch %d", batch_id))
+
+      # Generate batch data based on the copula type
+      if (inherits(fit, "BiCop")) {
+        batch <- VineCopula::BiCopSim(batch_size, family = fit$family, par = fit$par, par2 = fit$par2)
+      } else if (!is.null(fit@copula)) {
+        batch <- copula::rCopula(batch_size, fit@copula)
+      } else {
+        stop("Unsupported copula type for model '", model_name, "'.")
+      }
+
+      # Assign column names and add BatchID
+      if (!is.null(self$data)) {
+        colnames(batch) <- colnames(self$data)
+      }
+      batch_dt <- data.table::as.data.table(batch)
+      batch_dt[, BatchID := batch_id]
+      return(batch_dt)
+    },
 
     # Gaussian Conditional Sampling
     conditional_gaussian = function(fit, known_values, n = 1) {
@@ -699,6 +786,808 @@ ModelScorer <- R6::R6Class(
       result <- matrix(NA, nrow = n, ncol = 2)
       result[, known_index] <- rep(known_u, n)
       result[, remaining_index] <- conditional_u
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # Plackett Conditional Sampling
+    conditional_plackett = function(fit, known_values, n = 1) {
+      copula_model <- fit@copula
+      theta <- copula_model@parameters[[1]]  # Plackett association parameter
+      if (length(known_values) != 1) {
+        message("Plackett copula supports conditioning on a single variable.")
+        return(NULL)
+      }
+
+      # Match known variable index
+      known_var <- names(known_values)[1]
+      known_index <- match(known_var, colnames(self$data))
+      remaining_index <- setdiff(1:2, known_index)
+
+      # Convert known_values to pseudo-observations
+      known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
+
+      # Function to compute the conditional CDF of the remaining variable
+      conditional_cdf <- function(w, u, theta) {
+        num <- theta * (w * (1 - u) + u * (1 - w))
+        denom <- 1 + (theta - 1) * (w + u - 2 * w * u)
+        num / denom
+      }
+
+      # Generate conditional samples
+      conditional_samples <- replicate(n, {
+        W <- runif(1)  # Random uniform value for conditional sampling
+        conditional_cdf(W, known_u, theta)
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = 2)
+      result[, known_index] <- rep(known_u, n)
+      result[, remaining_index] <- conditional_samples
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # FGM Conditional Sampling
+    conditional_fgm = function(fit, known_values, n = 1) {
+      copula_model <- fit@copula
+      theta <- copula_model@parameters[[1]]  # FGM dependence parameter
+      if (length(known_values) != 1) {
+        message("FGM copula supports conditioning on a single variable.")
+        return(NULL)
+      }
+
+      # Match known variable index
+      known_var <- names(known_values)[1]
+      known_index <- match(known_var, colnames(self$data))
+      remaining_index <- setdiff(1:2, known_index)
+
+      # Convert known_values to pseudo-observations
+      known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
+
+      # Function to compute the conditional CDF of the remaining variable
+      conditional_cdf <- function(w, u, theta) {
+        w + theta * u * (1 - u) * (1 - 2 * w)
+      }
+
+      # Generate conditional samples
+      conditional_samples <- replicate(n, {
+        W <- runif(1)  # Random uniform value for conditional sampling
+        conditional_cdf(W, known_u, theta)
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = 2)
+      result[, known_index] <- rep(known_u, n)
+      result[, remaining_index] <- conditional_samples
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # BB1 Conditional Sampling
+    conditional_bb1 = function(fit, known_values, n = 1) {
+      theta <- fit$par  # Dependence parameter theta
+      delta <- fit$par2  # Tail dependence parameter delta
+
+      if (length(known_values) != 1) {
+        message("BB1 copula supports conditioning on a single variable.")
+        return(NULL)
+      }
+
+      # Match known variable index
+      known_var <- names(known_values)[1]
+      known_index <- match(known_var, colnames(self$data))
+      remaining_index <- setdiff(1:2, known_index)
+
+      # Convert known_values to pseudo-observations
+      known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
+
+      # Generate conditional samples
+      conditional_samples <- replicate(n, {
+        W <- runif(1)  # Random uniform value for conditional sampling
+
+        if (known_index == 1) {
+          # u1 is known, solve for u2
+          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 7, par = theta, par2 = delta)
+        } else {
+          # u2 is known, solve for u1
+          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 7, par = theta, par2 = delta)
+        }
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = 2)
+      result[, known_index] <- rep(known_u, n)
+      result[, remaining_index] <- conditional_samples
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # BB6 Conditional Sampling
+    conditional_bb2 = function(fit, known_values, n = 1) {
+      theta <- fit$par  # Dependence parameter theta
+      delta <- fit$par2  # Tail dependence parameter delta
+
+      # Validate parameters
+      if (theta <= 0) {
+        message("Theta must be greater than 0 for the BB2 copula.")
+        return(NULL)
+      }
+      if (delta <= 0) {
+        message("Delta must be greater than 0 for the BB2 copula.")
+        return(NULL)
+      }
+
+      if (length(known_values) != 1) {
+        message("BB2 copula supports conditioning on a single variable.")
+        return(NULL)
+      }
+
+      # Match known variable index
+      known_var <- names(known_values)[1]
+      known_index <- match(known_var, colnames(self$data))
+      remaining_index <- setdiff(1:2, known_index)
+
+      # Convert known_values to pseudo-observations
+      known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
+
+      # Generate conditional samples
+      conditional_samples <- replicate(n, {
+        W <- runif(1)  # Random uniform value for conditional sampling
+
+        if (known_index == 1) {
+          # u1 is known, solve for u2
+          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 8, par = theta, par2 = delta)
+        } else {
+          # u2 is known, solve for u1
+          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 8, par = theta, par2 = delta)
+        }
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = 2)
+      result[, known_index] <- rep(known_u, n)
+      result[, remaining_index] <- conditional_samples
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # BB7 Conditional Sampling
+    conditional_bb3 = function(fit, known_values, n = 1) {
+      theta <- fit$par  # Dependence parameter theta
+      delta <- fit$par2  # Tail dependence parameter delta
+
+      # Validate parameters
+      if (theta <= 0) {
+        message("Theta must be greater than 0 for the BB3 copula.")
+        return(NULL)
+      }
+
+      if (delta <= 1) {
+        message("Delta must be greater than 1 for the BB3 copula.")
+        return(NULL)
+      }
+
+      if (length(known_values) != 1) {
+        message("BB3 copula supports conditioning on a single variable.")
+        return(NULL)
+      }
+
+      # Match known variable index
+      known_var <- names(known_values)[1]
+      known_index <- match(known_var, colnames(self$data))
+      remaining_index <- setdiff(1:2, known_index)
+
+      # Convert known_values to pseudo-observations
+      known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
+
+      # Generate conditional samples
+      conditional_samples <- replicate(n, {
+        W <- runif(1)  # Random uniform value for conditional sampling
+
+        if (known_index == 1) {
+          # u1 is known, solve for u2
+          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 9, par = theta, par2 = delta)
+        } else {
+          # u2 is known, solve for u1
+          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 9, par = theta, par2 = delta)
+        }
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = 2)
+      result[, known_index] <- rep(known_u, n)
+      result[, remaining_index] <- conditional_samples
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # BB8 Conditional Sampling
+    conditional_bb8 = function(fit, known_values, n = 1) {
+      theta <- fit$par  # Dependence parameter theta
+      delta <- fit$par2  # Tail dependence parameter delta
+
+      # Validate parameters
+      if (theta <= 0) {
+        message("Theta must be greater than 0 for the BB8 copula.")
+        return(NULL)
+      }
+      if (delta <= 0) {
+        message("Delta must be greater than 0 for the BB8 copula.")
+        return(NULL)
+      }
+
+      if (length(known_values) != 1) {
+        message("BB8 copula supports conditioning on a single variable.")
+        return(NULL)
+      }
+
+      # Match known variable index
+      known_var <- names(known_values)[1]
+      known_index <- match(known_var, colnames(self$data))
+      remaining_index <- setdiff(1:2, known_index)
+
+      # Convert known_values to pseudo-observations
+      known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
+
+      # Generate conditional samples
+      conditional_samples <- replicate(n, {
+        W <- runif(1)  # Random uniform value for conditional sampling
+
+        if (known_index == 1) {
+          # u1 is known, solve for u2
+          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 10, par = theta, par2 = delta)
+        } else {
+          # u2 is known, solve for u1
+          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 10, par = theta, par2 = delta)
+        }
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = 2)
+      result[, known_index] <- rep(known_u, n)
+      result[, remaining_index] <- conditional_samples
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # Rotated Clayton (180) Conditional Sampling
+    conditional_rotated_clayton_180 = function(fit, known_values, n = 1) {
+      theta <- fit$par  # Dependence parameter for Rotated Clayton (180)
+
+      # Validate parameters
+      if (theta <= 0) {
+        message("Theta must be greater than 0 for the Rotated Clayton (180) copula.")
+        return(NULL)
+      }
+
+      if (length(known_values) != 1) {
+        message("Rotated Clayton (180) copula supports conditioning on a single variable.")
+        return(NULL)
+      }
+
+      # Match known variable index
+      known_var <- names(known_values)[1]
+      known_index <- match(known_var, colnames(self$data))
+      remaining_index <- setdiff(1:2, known_index)
+
+      # Convert known_values to pseudo-observations
+      known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
+
+      # Generate conditional samples
+      conditional_samples <- replicate(n, {
+        W <- runif(1)  # Random uniform value for conditional sampling
+
+        if (known_index == 1) {
+          # u1 is known, solve for u2
+          ((1 - W) * (1 - known_u^(-theta)) + known_u^(-theta))^(-1 / theta)
+        } else {
+          # u2 is known, solve for u1
+          (known_u^(-theta) - (1 - W) * (known_u^(-theta) - 1))^(-1 / theta)
+        }
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = 2)
+      result[, known_index] <- rep(known_u, n)
+      result[, remaining_index] <- conditional_samples
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # Rotated Gumbel (180) Conditional Sampling
+    conditional_rotated_gumbel_180 = function(fit, known_values, n = 1) {
+      theta <- fit$par  # Dependence parameter for Rotated Gumbel (180)
+
+      # Validate parameters
+      if (theta <= 1) {
+        message("Theta must be greater than 1 for the Rotated Gumbel (180) copula.")
+        return(NULL)
+      }
+
+      if (length(known_values) != 1) {
+        message("Rotated Gumbel (180) copula supports conditioning on a single variable.")
+        return(NULL)
+      }
+
+      # Match known variable index
+      known_var <- names(known_values)[1]
+      known_index <- match(known_var, colnames(self$data))
+      remaining_index <- setdiff(1:2, known_index)
+
+      # Convert known_values to pseudo-observations
+      known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
+
+      # Generate conditional samples
+      conditional_samples <- replicate(n, {
+        W <- runif(1)  # Random uniform value for conditional sampling
+
+        if (known_index == 1) {
+          # u1 is known, solve for u2
+          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 14, par = theta)
+        } else {
+          # u2 is known, solve for u1
+          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 14, par = theta)
+        }
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = 2)
+      result[, known_index] <- rep(known_u, n)
+      result[, remaining_index] <- conditional_samples
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # Rotated Joe (180) Conditional Sampling
+    conditional_rotated_joe_180 = function(fit, known_values, n = 1) {
+      theta <- fit$par  # Dependence parameter for Rotated Joe (180)
+
+      # Validate parameters
+      if (theta <= 1) {
+        message("Theta must be greater than 1 for the Rotated Joe (180) copula.")
+        return(NULL)
+      }
+
+      if (length(known_values) != 1) {
+        message("Rotated Joe (180) copula supports conditioning on a single variable.")
+        return(NULL)
+      }
+
+      # Match known variable index
+      known_var <- names(known_values)[1]
+      known_index <- match(known_var, colnames(self$data))
+      remaining_index <- setdiff(1:2, known_index)
+
+      # Convert known_values to pseudo-observations
+      known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
+
+      # Generate conditional samples
+      conditional_samples <- replicate(n, {
+        W <- runif(1)  # Random uniform value for conditional sampling
+
+        if (known_index == 1) {
+          # u1 is known, solve for u2
+          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 16, par = theta)
+        } else {
+          # u2 is known, solve for u1
+          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 16, par = theta)
+        }
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = 2)
+      result[, known_index] <- rep(known_u, n)
+      result[, remaining_index] <- conditional_samples
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # Rotated BB1 (180) Conditional Sampling
+    conditional_rotated_bb1_180 = function(fit, known_values, n = 1) {
+      theta <- fit$par  # Dependence parameter for Rotated BB1 (180)
+      delta <- fit$par2  # Additional tail parameter for Rotated BB1 (180)
+
+      # Validate parameters
+      if (theta <= 0) {
+        message("Theta must be greater than 0 for the Rotated BB1 (180) copula.")
+        return(NULL)
+      }
+      if (delta <= 0) {
+        message("Delta must be greater than 0 for the Rotated BB1 (180) copula.")
+        return(NULL)
+      }
+
+      if (length(known_values) != 1) {
+        message("Rotated BB1 (180) copula supports conditioning on a single variable.")
+        return(NULL)
+      }
+
+      # Match known variable index
+      known_var <- names(known_values)[1]
+      known_index <- match(known_var, colnames(self$data))
+      remaining_index <- setdiff(1:2, known_index)
+
+      # Convert known_values to pseudo-observations
+      known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
+
+      # Generate conditional samples
+      conditional_samples <- replicate(n, {
+        W <- runif(1)  # Random uniform value for conditional sampling
+
+        if (known_index == 1) {
+          # u1 is known, solve for u2
+          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 17, par = theta, par2 = delta)
+        } else {
+          # u2 is known, solve for u1
+          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 17, par = theta, par2 = delta)
+        }
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = 2)
+      result[, known_index] <- rep(known_u, n)
+      result[, remaining_index] <- conditional_samples
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # Rotated BB6 (180) Conditional Sampling
+    conditional_rotated_bb6_180 = function(fit, known_values, n = 1) {
+      theta <- fit$par  # Dependence parameter for Rotated BB6 (180)
+      delta <- fit$par2  # Additional tail parameter for Rotated BB6 (180)
+
+      # Validate parameters
+      if (theta <= 0) {
+        message("Theta must be greater than 0 for the Rotated BB6 (180) copula.")
+        return(NULL)
+      }
+      if (delta <= 0) {
+        message("Delta must be greater than 0 for the Rotated BB6 (180) copula.")
+        return(NULL)
+      }
+
+      if (length(known_values) != 1) {
+        message("Rotated BB6 (180) copula supports conditioning on a single variable.")
+        return(NULL)
+      }
+
+      # Match known variable index
+      known_var <- names(known_values)[1]
+      known_index <- match(known_var, colnames(self$data))
+      remaining_index <- setdiff(1:2, known_index)
+
+      # Convert known_values to pseudo-observations
+      known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
+
+      # Generate conditional samples
+      conditional_samples <- replicate(n, {
+        W <- runif(1)  # Random uniform value for conditional sampling
+
+        if (known_index == 1) {
+          # u1 is known, solve for u2
+          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 18, par = theta, par2 = delta)
+        } else {
+          # u2 is known, solve for u1
+          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 18, par = theta, par2 = delta)
+        }
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = 2)
+      result[, known_index] <- rep(known_u, n)
+      result[, remaining_index] <- conditional_samples
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # Rotated BB7 (180) Conditional Sampling
+    conditional_rotated_bb7_180 = function(fit, known_values, n = 1) {
+      theta <- fit$par  # Dependence parameter for Rotated BB7 (180)
+      delta <- fit$par2  # Additional tail parameter for Rotated BB7 (180)
+
+      # Validate parameters
+      if (theta <= 0) {
+        message("Theta must be greater than 0 for the Rotated BB7 (180) copula.")
+        return(NULL)
+      }
+      if (delta <= 1) {
+        message("Delta must be greater than 1 for the Rotated BB7 (180) copula.")
+        return(NULL)
+      }
+
+      if (length(known_values) != 1) {
+        message("Rotated BB7 (180) copula supports conditioning on a single variable.")
+        return(NULL)
+      }
+
+      # Match known variable index
+      known_var <- names(known_values)[1]
+      known_index <- match(known_var, colnames(self$data))
+      remaining_index <- setdiff(1:2, known_index)
+
+      # Convert known_values to pseudo-observations
+      known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
+
+      # Generate conditional samples
+      conditional_samples <- replicate(n, {
+        W <- runif(1)  # Random uniform value for conditional sampling
+
+        if (known_index == 1) {
+          # u1 is known, solve for u2
+          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 19, par = theta, par2 = delta)
+        } else {
+          # u2 is known, solve for u1
+          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 19, par = theta, par2 = delta)
+        }
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = 2)
+      result[, known_index] <- rep(known_u, n)
+      result[, remaining_index] <- conditional_samples
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # Rotated BB8 (180) Conditional Sampling
+    conditional_rotated_bb8_180 = function(fit, known_values, n = 1) {
+      theta <- fit$par  # Dependence parameter for Rotated BB8 (180)
+      delta <- fit$par2  # Additional tail parameter for Rotated BB8 (180)
+
+      # Validate parameters
+      if (theta <= 0) {
+        message("Theta must be greater than 0 for the Rotated BB8 (180) copula.")
+        return(NULL)
+      }
+      if (delta <= 0) {
+        message("Delta must be greater than 0 for the Rotated BB8 (180) copula.")
+        return(NULL)
+      }
+
+      if (length(known_values) != 1) {
+        message("Rotated BB8 (180) copula supports conditioning on a single variable.")
+        return(NULL)
+      }
+
+      # Match known variable index
+      known_var <- names(known_values)[1]
+      known_index <- match(known_var, colnames(self$data))
+      remaining_index <- setdiff(1:2, known_index)
+
+      # Convert known_values to pseudo-observations
+      known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
+
+      # Generate conditional samples
+      conditional_samples <- replicate(n, {
+        W <- runif(1)  # Random uniform value for conditional sampling
+
+        if (known_index == 1) {
+          # u1 is known, solve for u2
+          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 20, par = theta, par2 = delta)
+        } else {
+          # u2 is known, solve for u1
+          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 20, par = theta, par2 = delta)
+        }
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = 2)
+      result[, known_index] <- rep(known_u, n)
+      result[, remaining_index] <- conditional_samples
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # Tawn Type 1 Conditional Sampling
+    conditional_tawn_type1 = function(fit, known_values, n = 1) {
+      theta <- fit$par  # Dependence parameter for Tawn Type 1
+      delta <- fit$par2  # Asymmetry parameter for Tawn Type 1
+
+      # Validate parameters
+      if (theta <= 0) {
+        message("Theta must be greater than 0 for the Tawn Type 1 copula.")
+        return(NULL)
+      }
+      if (delta < 0 || delta > 1) {
+        message("Delta must be in [0, 1] for the Tawn Type 1 copula.")
+        return(NULL)
+      }
+
+      if (length(known_values) != 1) {
+        message("Tawn Type 1 copula supports conditioning on a single variable.")
+        return(NULL)
+      }
+
+      # Match known variable index
+      known_var <- names(known_values)[1]
+      known_index <- match(known_var, colnames(self$data))
+      remaining_index <- setdiff(1:2, known_index)
+
+      # Convert known_values to pseudo-observations
+      known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
+
+      # Generate conditional samples
+      conditional_samples <- replicate(n, {
+        W <- runif(1)  # Random uniform value for conditional sampling
+
+        if (known_index == 1) {
+          # u1 is known, solve for u2
+          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 104, par = theta, par2 = delta)
+        } else {
+          # u2 is known, solve for u1
+          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 104, par = theta, par2 = delta)
+        }
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = 2)
+      result[, known_index] <- rep(known_u, n)
+      result[, remaining_index] <- conditional_samples
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # Rotated Tawn Type 1 (180) Conditional Sampling
+    conditional_rotated_tawn_type1_180 = function(fit, known_values, n = 1) {
+      theta <- fit$par  # Dependence parameter for Rotated Tawn Type 1 (180)
+      delta <- fit$par2  # Asymmetry parameter for Rotated Tawn Type 1 (180)
+
+      # Validate parameters
+      if (theta <= 0) {
+        message("Theta must be greater than 0 for the Rotated Tawn Type 1 (180) copula.")
+        return(NULL)
+      }
+      if (delta < 0 || delta > 1) {
+        message("Delta must be in [0, 1] for the Rotated Tawn Type 1 (180) copula.")
+        return(NULL)
+      }
+
+      if (length(known_values) != 1) {
+        message("Rotated Tawn Type 1 (180) copula supports conditioning on a single variable.")
+        return(NULL)
+      }
+
+      # Match known variable index
+      known_var <- names(known_values)[1]
+      known_index <- match(known_var, colnames(self$data))
+      remaining_index <- setdiff(1:2, known_index)
+
+      # Convert known_values to pseudo-observations
+      known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
+
+      # Generate conditional samples
+      conditional_samples <- replicate(n, {
+        W <- runif(1)  # Random uniform value for conditional sampling
+
+        if (known_index == 1) {
+          # u1 is known, solve for u2
+          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 114, par = theta, par2 = delta)
+        } else {
+          # u2 is known, solve for u1
+          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 114, par = theta, par2 = delta)
+        }
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = 2)
+      result[, known_index] <- rep(known_u, n)
+      result[, remaining_index] <- conditional_samples
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # Tawn Type 2 Conditional Sampling
+    conditional_tawn_type2 = function(fit, known_values, n = 1) {
+      theta <- fit$par  # Dependence parameter for Tawn Type 2
+      delta <- fit$par2  # Asymmetry parameter for Tawn Type 2
+
+      # Validate parameters
+      if (theta <= 0) {
+        message("Theta must be greater than 0 for the Tawn Type 2 copula.")
+        return(NULL)
+      }
+      if (delta < 0 || delta > 1) {
+        message("Delta must be in [0, 1] for the Tawn Type 2 copula.")
+        return(NULL)
+      }
+
+      if (length(known_values) != 1) {
+        message("Tawn Type 2 copula supports conditioning on a single variable.")
+        return(NULL)
+      }
+
+      # Match known variable index
+      known_var <- names(known_values)[1]
+      known_index <- match(known_var, colnames(self$data))
+      remaining_index <- setdiff(1:2, known_index)
+
+      # Convert known_values to pseudo-observations
+      known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
+
+      # Generate conditional samples
+      conditional_samples <- replicate(n, {
+        W <- runif(1)  # Random uniform value for conditional sampling
+
+        if (known_index == 1) {
+          # u1 is known, solve for u2
+          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 204, par = theta, par2 = delta)
+        } else {
+          # u2 is known, solve for u1
+          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 204, par = theta, par2 = delta)
+        }
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = 2)
+      result[, known_index] <- rep(known_u, n)
+      result[, remaining_index] <- conditional_samples
+      result_dt <- data.table::as.data.table(result)
+      data.table::setnames(result_dt, colnames(self$data))
+      return(result_dt)
+    },
+
+    # Rotated Tawn Type 2 (180) Conditional Sampling
+    conditional_rotated_tawn_type2_180 = function(fit, known_values, n = 1) {
+      theta <- fit$par  # Dependence parameter for Rotated Tawn Type 2 (180)
+      delta <- fit$par2  # Asymmetry parameter for Rotated Tawn Type 2 (180)
+
+      # Validate parameters
+      if (theta <= 0) {
+        message("Theta must be greater than 0 for the Rotated Tawn Type 2 (180) copula.")
+        return(NULL)
+      }
+      if (delta < 0 || delta > 1) {
+        message("Delta must be in [0, 1] for the Rotated Tawn Type 2 (180) copula.")
+        return(NULL)
+      }
+
+      if (length(known_values) != 1) {
+        message("Rotated Tawn Type 2 (180) copula supports conditioning on a single variable.")
+        return(NULL)
+      }
+
+      # Match known variable index
+      known_var <- names(known_values)[1]
+      known_index <- match(known_var, colnames(self$data))
+      remaining_index <- setdiff(1:2, known_index)
+
+      # Convert known_values to pseudo-observations
+      known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
+
+      # Generate conditional samples
+      conditional_samples <- replicate(n, {
+        W <- runif(1)  # Random uniform value for conditional sampling
+
+        if (known_index == 1) {
+          # u1 is known, solve for u2
+          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 214, par = theta, par2 = delta)
+        } else {
+          # u2 is known, solve for u1
+          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 214, par = theta, par2 = delta)
+        }
+      })
+
+      # Combine known and conditional values
+      result <- matrix(NA, nrow = n, ncol = 2)
+      result[, known_index] <- rep(known_u, n)
+      result[, remaining_index] <- conditional_samples
       result_dt <- data.table::as.data.table(result)
       data.table::setnames(result_dt, colnames(self$data))
       return(result_dt)

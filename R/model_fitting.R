@@ -84,34 +84,115 @@ ModelFitter <- R6::R6Class(
           VineCopula::BiCopEst(data[, 1], data[, 2], family = 7)
         }
       ),
-      BB2 = list(
-        description = "BB2 copula for flexible tail dependence.",
+      BB6 = list(
+        description = "BB6 copula for flexible tail dependence.",
         fit_function = function(data) {
-          if (ncol(data) != 2) stop("BB2 copula requires exactly 2 dimensions.")
+          if (ncol(data) != 2) stop("BB6 copula requires exactly 2 dimensions.")
           VineCopula::BiCopEst(data[, 1], data[, 2], family = 8)
         }
       ),
-      BB3 = list(
-        description = "BB3 copula for asymmetrical dependence.",
+      BB7 = list(
+        description = "BB7 copula for asymmetrical dependence.",
         fit_function = function(data) {
-          if (ncol(data) != 2) stop("BB3 copula requires exactly 2 dimensions.")
+          if (ncol(data) != 2) stop("BB7 copula requires exactly 2 dimensions.")
           VineCopula::BiCopEst(data[, 1], data[, 2], family = 9)
         }
       ),
-      BB4 = list(
-        description = "BB4 copula for modeling both tail dependencies.",
+      BB8 = list(
+        description = "BB8 copula for modeling both tail dependencies.",
         fit_function = function(data) {
-          if (ncol(data) != 2) stop("BB4 copula requires exactly 2 dimensions.")
+          if (ncol(data) != 2) stop("BB8 copula requires exactly 2 dimensions.")
           VineCopula::BiCopEst(data[, 1], data[, 2], family = 10)
         }
       ),
 
-      # Additional copulas from the evd package
-      Logistic = list(
-        description = "Logistic copula for symmetric extreme value dependence.",
+      # Rotated Copulas (180-degree)
+      "Rotated Clayton (180)" = list(
+        description = "180-degree rotated Clayton copula (survival Clayton) for upper tail dependence.",
         fit_function = function(data) {
-          if (ncol(data) != 2) stop("Logistic copula requires exactly 2 dimensions.")
-          evd::fbvevd(data, model = "log")
+          if (ncol(data) != 2) stop("Rotated Clayton (180) copula requires exactly 2 dimensions.")
+          VineCopula::BiCopEst(data[, 1], data[, 2], family = 13)
+        }
+      ),
+
+      "Rotated Gumbel (180)" = list(
+        description = "180-degree rotated Gumbel copula (survival Gumbel) for lower tail dependence.",
+        fit_function = function(data) {
+          if (ncol(data) != 2) stop("Rotated Gumbel (180) copula requires exactly 2 dimensions.")
+          VineCopula::BiCopEst(data[, 1], data[, 2], family = 14)
+        }
+      ),
+
+      "Rotated Joe (180)" = list(
+        description = "180-degree rotated Joe copula (survival Joe) for upper tail dependence.",
+        fit_function = function(data) {
+          if (ncol(data) != 2) stop("Rotated Joe (180) copula requires exactly 2 dimensions.")
+          VineCopula::BiCopEst(data[, 1], data[, 2], family = 16)
+        }
+      ),
+
+      "Rotated BB1 (180)" = list(
+        description = "180-degree rotated BB1 copula for upper and lower tail dependence.",
+        fit_function = function(data) {
+          if (ncol(data) != 2) stop("Rotated BB1 (180) copula requires exactly 2 dimensions.")
+          VineCopula::BiCopEst(data[, 1], data[, 2], family = 17)
+        }
+      ),
+
+      "Rotated BB6 (180)" = list(
+        description = "180-degree rotated BB6 copula for tail dependence.",
+        fit_function = function(data) {
+          if (ncol(data) != 2) stop("Rotated BB6 (180) copula requires exactly 2 dimensions.")
+          VineCopula::BiCopEst(data[, 1], data[, 2], family = 18)
+        }
+      ),
+
+      "Rotated BB7 (180)" = list(
+        description = "180-degree rotated BB7 copula for asymmetrical dependence.",
+        fit_function = function(data) {
+          if (ncol(data) != 2) stop("Rotated BB7 (180) copula requires exactly 2 dimensions.")
+          VineCopula::BiCopEst(data[, 1], data[, 2], family = 19)
+        }
+      ),
+
+      "Rotated BB8 (180)" = list(
+        description = "180-degree rotated BB8 copula for modeling tail dependencies.",
+        fit_function = function(data) {
+          if (ncol(data) != 2) stop("Rotated BB8 (180) copula requires exactly 2 dimensions.")
+          VineCopula::BiCopEst(data[, 1], data[, 2], family = 20)
+        }
+      ),
+
+      # Tawn Copulas
+      "Tawn Type 1" = list(
+        description = "Tawn Type 1 copula for asymmetrical lower tail dependence.",
+        fit_function = function(data) {
+          if (ncol(data) != 2) stop("Tawn Type 1 copula requires exactly 2 dimensions.")
+          VineCopula::BiCopEst(data[, 1], data[, 2], family = 104)
+        }
+      ),
+
+      "Rotated Tawn Type 1 (180)" = list(
+        description = "180-degree rotated Tawn Type 1 copula for asymmetrical upper tail dependence.",
+        fit_function = function(data) {
+          if (ncol(data) != 2) stop("Rotated Tawn Type 1 (180) copula requires exactly 2 dimensions.")
+          VineCopula::BiCopEst(data[, 1], data[, 2], family = 114)
+        }
+      ),
+
+      "Tawn Type 2" = list(
+        description = "Tawn Type 2 copula for asymmetrical upper tail dependence.",
+        fit_function = function(data) {
+          if (ncol(data) != 2) stop("Tawn Type 2 copula requires exactly 2 dimensions.")
+          VineCopula::BiCopEst(data[, 1], data[, 2], family = 204)
+        }
+      ),
+
+      "Rotated Tawn Type 2 (180)" = list(
+        description = "180-degree rotated Tawn Type 2 copula for asymmetrical lower tail dependence.",
+        fit_function = function(data) {
+          if (ncol(data) != 2) stop("Rotated Tawn Type 2 (180) copula requires exactly 2 dimensions.")
+          VineCopula::BiCopEst(data[, 1], data[, 2], family = 214)
         }
       )
     ),
