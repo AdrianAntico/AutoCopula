@@ -314,31 +314,17 @@ ModelScorer <- R6::R6Class(
     #' @return A `data.table` containing conditional predictions for the specified range.
     #'
     #' @export
-    conditional_range_prediction = function(model_name, known_variable, value_range, n = 100, parallel = FALSE, threads = NULL) {
+    conditional_range_prediction = function(model_name, known_ranges, n = 100, parallel = FALSE, threads = NULL) {
       # Validate inputs
-      if (!is.character(known_variable) || length(known_variable) != 1) {
-        stop("known_variable must be a single character string representing a variable name.")
+      if (!is.list(known_ranges) || length(known_ranges) == 0) {
+        stop("known_ranges must be a non-empty named list of variable ranges.")
       }
-      if (!is.numeric(value_range)) {
-        stop("value_range must be a numeric vector.")
+      if (!all(sapply(known_ranges, is.numeric))) {
+        stop("All ranges in known_ranges must be numeric vectors.")
       }
 
-      # Function to process a single value
-      process_value <- function(value) {
-        set.seed(batch_id)
-        message(sprintf("Processing conditional prediction for %s = %f", known_variable, value))
-        known_values <- list()
-        known_values[[known_variable]] <- value
-        predictions <- self$conditional_prediction(model_name = model_name, known_values = known_values, n = n)
-
-        if (!is.null(predictions)) {
-          # Add the conditioned value to the predictions
-          predictions[, (known_variable) := value]
-          return(predictions)
-        } else {
-          return(NULL)
-        }
-      }
+      # Generate all combinations of known variable values
+      combinations <- do.call(expand.grid, known_ranges)
 
       # Parallel or sequential processing
       results_list <- tryCatch({
@@ -353,11 +339,17 @@ ModelScorer <- R6::R6Class(
           message(sprintf("Using %d threads for parallel processing.", num_threads))
           future::plan(future::multisession, workers = num_threads)
 
-          # Process values in parallel
-          future.apply::future_lapply(value_range, process_value, future.seed = TRUE)
+          # Process combinations in parallel
+          future.apply::future_lapply(seq_len(nrow(combinations)), function(i) {
+            known_values <- as.list(combinations[i, ])
+            private$process_value_conditional(known_values = known_values, batch_id = i)
+          }, future.seed = TRUE)
         } else {
-          # Process values sequentially
-          lapply(value_range, process_value) # value = 0.2
+          # Process combinations sequentially
+          lapply(seq_len(nrow(combinations)), function(i) {
+            known_values <- as.list(combinations[i, ])
+            private$process_value_conditional(known_values = known_values, batch_id = i)
+          })
         }
       }, error = function(e) {
         message("Error during conditional range prediction: ", e$message)
@@ -371,7 +363,7 @@ ModelScorer <- R6::R6Class(
 
       # Combine results into a single data.table
       if (length(results_list) > 0) {
-        final_results <- data.table::rbindlist(results_list, idcol = "ConditionedValue", use.names = TRUE, fill = TRUE)
+        final_results <- data.table::rbindlist(results_list, use.names = TRUE, fill = TRUE)
         return(final_results)
       } else {
         warning("No predictions were generated. Please check your inputs.")
@@ -408,6 +400,91 @@ ModelScorer <- R6::R6Class(
         message("Error in hybrid simulation for model '", model_name, "': ", e$message)
         NULL
       })
+    },
+
+    #' @description Generate hybrid simulations for a range of known values.
+    #'
+    #' @details
+    #' The `hybrid_range_simulation()` function extends `hybrid_simulation()` by enabling simulations
+    #' over a range of values for one known variable. It generates both conditional and unconditional
+    #' samples for each value in the specified range and combines the results.
+    #'
+    #' - **Input Parameters**:
+    #'   - `model_name`: The name of the fitted copula model to use for simulations.
+    #'   - `known_variable`: The name of the variable to condition on.
+    #'   - `value_range`: A numeric vector specifying the range of values for the known variable.
+    #'   - `n`: Number of instances to simulate for each known value.
+    #'   - `parallel`: Logical indicating whether to run the simulation in parallel. Default is `FALSE`.
+    #'   - `threads`: Number of parallel threads to use if `parallel = TRUE`. Defaults to available cores minus one.
+    #'
+    #' - **Output**:
+    #'   - A `data.table` containing the hybrid simulation results for all values in the specified range.
+    #'
+    #' @param model_name Name of the model to use.
+    #' @param known_variable Name of the variable to condition on.
+    #' @param value_range A numeric vector specifying the range of known values.
+    #' @param n Number of instances to simulate for each known value.
+    #' @param parallel Logical, whether to use parallel processing.
+    #' @param threads Number of threads to use for parallel processing. Defaults to available cores minus one.
+    #'
+    #' @return A data.table of hybrid simulations for the specified range of values.
+    #'
+    #' @export
+    hybrid_range_simulation = function(model_name, known_ranges, n = 100, parallel = FALSE, threads = NULL) {
+      # Validate inputs
+      if (!is.list(known_ranges) || length(known_ranges) == 0) {
+        stop("known_ranges must be a non-empty named list of variable ranges.")
+      }
+      if (!all(sapply(known_ranges, is.numeric))) {
+        stop("All ranges in known_ranges must be numeric vectors.")
+      }
+
+      # Generate all combinations of known variable values
+      combinations <- do.call(expand.grid, known_ranges)
+
+      # Parallel or sequential processing
+      results_list <- tryCatch({
+        if (parallel) {
+          # Load the future.apply package
+          options(future.rng.onMisuse = "ignore")
+          RNGkind("L'Ecuyer-CMRG")
+          set.seed()
+
+          # Set the number of threads
+          num_threads <- if (is.null(threads)) future::availableCores() - 1 else min(threads, future::availableCores())
+          message(sprintf("Using %d threads for parallel processing.", num_threads))
+          future::plan(future::multisession, workers = num_threads)
+
+          # Process combinations in parallel
+          future.apply::future_lapply(seq_len(nrow(combinations)), function(i) {
+            known_values <- as.list(combinations[i, ])
+            private$process_value_hybrid(value = known_values, batch_id = i)
+          }, future.seed = TRUE)
+        } else {
+          # Process combinations sequentially
+          lapply(seq_len(nrow(combinations)), function(i) { # i = 1
+            known_values <- as.list(combinations[i, ])
+            private$process_value_hybrid(value = known_values, batch_id = i)
+          })
+        }
+      }, error = function(e) {
+        message("Error during hybrid range simulation: ", e$message)
+        return(NULL)
+      }, finally = {
+        # Ensure all workers are shut down if parallel
+        if (parallel) {
+          future::plan("sequential")
+        }
+      })
+
+      # Combine results into a single data.table
+      if (length(results_list) > 0) {
+        final_results <- data.table::rbindlist(results_list, use.names = TRUE, fill = TRUE)
+        return(final_results)
+      } else {
+        warning("No simulations were generated. Please check your inputs.")
+        return(NULL)
+      }
     },
 
     #' @description Perform importance sampling for the copula model.
@@ -467,6 +544,57 @@ ModelScorer <- R6::R6Class(
       batch_dt <- data.table::as.data.table(batch)
       batch_dt[, BatchID := batch_id]
       return(batch_dt)
+    },
+
+    # Private method for processing a single batch in conditional_range_predictions()
+    process_value_conditional = function(known_values, batch_id) {
+      # set.seed(batch_id)
+      message(sprintf("Processing conditional prediction for batch_id = %d", batch_id))
+      predictions <- self$conditional_prediction(model_name = model_name, known_values = known_values, n = n)
+
+      if (!is.null(predictions)) {
+        # Add the conditioned value to the predictions
+        return(predictions)
+      } else {
+        return(NULL)
+      }
+    },
+
+    # Private method for processing a single batch in hybrid_range_predictions()
+    process_value_hybrid = function(value, batch_id) {
+      # Set seed for reproducibility
+      set.seed(batch_id)
+
+      # Log the process
+      message(sprintf("Processing hybrid simulation for batch_id = %d, %f", batch_id, value))
+
+      # Run the hybrid simulation
+      sim_output <- self$hybrid_simulation(model_name = model_name, known_values = value, n = n)
+
+      # Validate simulation output
+      if (!all(c("Conditional", "Unconditional") %in% names(sim_output))) {
+        message("Simulation output must contain 'Conditional' and 'Unconditional' data.tables.")
+        return(NULL)
+      }
+
+      # Process Conditional data
+      Conditional <- sim_output$Conditional
+      data.table::setnames(Conditional, names(value), paste0(names(value), "_fixed"))
+      vars_cond <- names(Conditional)[!names(Conditional) %in% paste0(names(value), "_fixed")]
+      data.table::setnames(Conditional, vars_cond, paste0(vars_cond, "_cond"))
+
+      # Process Unconditional data
+      Unconditional <- sim_output$Unconditional
+      Unconditional <- Unconditional[, .SD, .SDcols = setdiff(names(Unconditional), names(value))]
+      data.table::setnames(Unconditional, paste0(names(Unconditional), "_uncond"))
+
+      # Combine results
+      final <- cbind(Conditional, Unconditional)
+
+      # Add batch_id to the result
+      final[, batch_id := batch_id]
+
+      return(final)
     },
 
     # Gaussian Conditional Sampling
