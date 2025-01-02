@@ -140,23 +140,115 @@ ModelScorer <- R6::R6Class(
     },
 
     #' @description Generate conditional predictions for a subset of variables.
+    #'
+    #' @details
+    #' The `conditional_prediction()` function generates conditional samples from a fitted copula model
+    #' based on specified known values for a subset of variables. This method is particularly useful in
+    #' scenarios where some variables are observed (known), and predictions or simulations are required
+    #' for the remaining variables, conditioned on the observed values.
+    #'
+    #' The function supports a wide range of copula families, including both multivariate and bivariate
+    #' copulas, as well as rotated and asymmetric copula models. The appropriate private method is
+    #' dynamically selected based on the copula type to handle the specifics of each family.
+    #'
+    #' - **Input Parameters**:
+    #'   - `model_name`: The name of the fitted copula model from which predictions will be generated.
+    #'   - `known_values`: A named list where the names correspond to variable names, and the values
+    #'     represent the observed values for those variables.
+    #'   - `n`: The number of conditional samples to generate.
+    #'
+    #' - **Process**:
+    #'   1. Validate that the `model_name` corresponds to a fitted copula model and that the `known_values`
+    #'      variables match the names of the dataset used for model fitting.
+    #'   2. Convert the known values into pseudo-observations using their empirical cumulative
+    #'      distribution functions (ECDFs).
+    #'   3. Call the appropriate private conditional sampling method for the copula family, which computes
+    #'      the conditional distribution of the remaining variables given the known values.
+    #'   4. Combine the conditional samples with the known values to produce the final result.
+    #'
+    #' - **Output**:
+    #'   - A `data.table` containing the conditional samples for the remaining variables, along with the
+    #'     known values for the conditioned variables.
+    #'
+    #' - **Error Handling**:
+    #'   If the copula type is not supported or if the input parameters are invalid, the function will
+    #'   return `NULL` with an appropriate warning or error message.
+    #'
+    #' - **Applications**:
+    #'   - Use cases include scenarios in finance, insurance, or any domain requiring predictions under
+    #'     partially observed conditions.
+    #'
+    #' **Note**: The method currently supports conditioning on a subset of variables for both multivariate
+    #' and bivariate copulas. Some copula families (e.g., rotated copulas) require special handling, which
+    #' is implemented through the private methods.
+    #'
     #' @param model_name Name of the model to use.
     #' @param known_values A named list of known variable values.
     #' @param n Number of samples to get
+    #'
     #' @return A data.table of conditional predictions.
+    #'
+    #' @export
+    #' @description Generate conditional predictions for a subset of variables.
+    #'
+    #' @details
+    #' The `conditional_prediction()` function generates conditional samples from a fitted copula model
+    #' based on specified known values or ranges for a subset of variables. This method is particularly
+    #' useful in scenarios where some variables are observed (known) with exact values or are constrained
+    #' within specific ranges, and predictions or simulations are required for the remaining variables.
+    #'
+    #' - **Input Parameters**:
+    #'   - `model_name`: The name of the fitted copula model from which predictions will be generated.
+    #'   - `known_values`: A named list where:
+    #'     - **Single Values**: The value represents an exact observation of the variable (e.g., `X = 0.5`).
+    #'       These are converted into pseudo-observations using the empirical cumulative distribution function (ECDF).
+    #'     - **Ranges**: The value is a vector of length 2 (e.g., `X = c(0.4, 0.6)`), representing the range within
+    #'       which the variable is constrained. Samples are drawn uniformly within the range during each iteration.
+    #'   - `n`: The number of conditional samples to generate.
+    #'
+    #' - **Process**:
+    #'   1. Validate that `model_name` corresponds to a fitted copula model and that `known_values` variables
+    #'      match the dataset used for model fitting.
+    #'   2. Process `known_values`:
+    #'      - For single values, convert them into pseudo-observations using their ECDF.
+    #'      - For ranges, sample uniformly within the range for each iteration.
+    #'   3. Dynamically select the appropriate private conditional sampling method for the copula family.
+    #'   4. Compute the conditional distribution of the remaining variables given the known values or sampled ranges.
+    #'   5. Combine the conditional samples with the known values/ranges to produce the final result.
+    #'
+    #' - **Output**:
+    #'   - A `data.table` containing the conditional samples for the remaining variables, along with the
+    #'     known values or sampled values for the conditioned variables.
+    #'
+    #' - **Error Handling**:
+    #'   - If `model_name` is not a supported copula type or `known_values` contains invalid inputs, the
+    #'     function returns `NULL` with an appropriate warning or error message.
+    #'
+    #' - **Applications**:
+    #'   - Use cases include finance, insurance, and other domains requiring predictions under partially
+    #'     observed or constrained conditions.
+    #'
+    #' @param model_name Name of the model to use.
+    #' @param known_values A named list of known variable values or ranges.
+    #'   - For single values: Provide a scalar value (e.g., `X = 0.5`).
+    #'   - For ranges: Provide a vector of length 2 (e.g., `X = c(0.4, 0.6)`).
+    #' @param n Number of conditional samples to generate.
+    #'
+    #' @return A `data.table` of conditional predictions.
+    #'
+    #' @export
     conditional_prediction = function(model_name, known_values, n = 1) {
       fit <- self$fit_results[[model_name]]
+
+      # Determine copula type
       if (model_name %in% c(
+        "Gaussian",
         "tCopula",
-        "claytonCopula",
-        "gumbelCopula",
-        "frankCopula",
-        "joeCopula",
-        "galambosCopula",
-        "huslerReissCopula",
-        "tevCopula",
-        "plackettCopula",
-        "fgmCopula")) {
+        "Clayton",
+        "Gumbel",
+        "Frank",
+        "Joe"
+      )) {
         copula_model <- fit@copula
       } else {
         copula_model <- "vine"
@@ -182,46 +274,14 @@ ModelScorer <- R6::R6Class(
           return(private$conditional_frank(fit, known_values, n))
         } else if (inherits(copula_model, "joeCopula")) {
           return(private$conditional_joe(fit, known_values, n))
-        } else if (inherits(copula_model, "galambosCopula")) {
-          return(private$conditional_galambos(fit, known_values, n))
-        } else if (inherits(copula_model, "huslerReissCopula")) {
-          return(private$conditional_huslerreiss(fit, known_values, n))
-        } else if (inherits(copula_model, "tevCopula")) {
-          return(private$conditional_tev(fit, known_values, n))
-        } else if (inherits(copula_model, "plackettCopula")) {
-          return(private$conditional_plackett(fit, known_values, n))
-        } else if (inherits(copula_model, "fgmCopula")) {
-          return(private$conditional_fgm(fit, known_values, n))
-        } else if (model_name == "BB1") {
-          return(private$conditional_bb1(fit, known_values, n))
-        } else if (model_name == "BB6") {
-          return(private$conditional_bb6(fit, known_values, n))
-        } else if (model_name == "BB7") {
-          return(private$conditional_bb7(fit, known_values, n))
-        } else if (model_name == "BB8") {
-          return(private$conditional_bb8(fit, known_values, n))
-        } else if (model_name == "Rotated Clayton (180)") {
-          return(private$conditional_rotated_clayton_180(fit, known_values, n))
-        } else if (model_name == "Rotated Gumbel (180)") {
-          return(private$conditional_rotated_gumbel_180(fit, known_values, n))
-        } else if (model_name == "Rotated Joe (180)") {
-          return(private$conditional_rotated_joe_180(fit, known_values, n))
-        } else if (model_name == "Rotated BB1 (180)") {
-          return(private$conditional_rotated_bb1_180(fit, known_values, n))
-        } else if (model_name == "Rotated BB6 (180)") {
-          return(private$conditional_rotated_bb6_180(fit, known_values, n))
-        } else if (model_name == "Rotated BB7 (180)") {
-          return(private$conditional_rotated_bb7_180(fit, known_values, n))
-        } else if (model_name == "Rotated BB8 (180)") {
-          return(private$conditional_rotated_bb8_180(fit, known_values, n))
-        } else if (model_name == "Tawn Type 1") {
-          return(private$conditional_tawn_type1(fit, known_values, n))
-        } else if (model_name == "Rotated Tawn Type 1 (180)") {
-          return(private$conditional_rotated_tawn_type1_180(fit, known_values, n))
-        } else if (model_name == "Tawn Type 2") {
-          return(private$conditional_tawn_type2(fit, known_values, n))
-        } else if (model_name == "Rotated Tawn Type 2 (180)") {
-          return(private$conditional_tawn_type2(fit, known_values, n))
+        } else if (model_name %in% c("BB1", "BB6", "BB7", "BB8")) {
+          conditional_function <- private[[paste0("conditional_", tolower(model_name))]]
+          return(conditional_function(fit, known_values, n))
+        } else if (grepl("Rotated", model_name)) {
+          # Rotated copulas (e.g., Rotated Clayton (180))
+          model_key <- gsub("[()\\s]", "_", tolower(model_name))
+          conditional_function <- private[[paste0("conditional_", model_key)]]
+          return(conditional_function(fit, known_values, n))
         } else {
           message("Conditional sampling is not implemented for this copula type.")
           return(NULL)
@@ -232,16 +292,117 @@ ModelScorer <- R6::R6Class(
       })
     },
 
+    #' @description Generate conditional predictions for a range of known values.
+    #'
+    #' @details
+    #' This function generates conditional predictions over a range of values for a single known variable.
+    #' It iteratively calls `conditional_prediction()` for each value in the range, with an option to
+    #' parallelize the computations for efficiency.
+    #'
+    #' - **Parallel Processing**:
+    #'   - If `parallel = TRUE`, the function uses the `future.apply` package to process the range
+    #'     values concurrently.
+    #'   - The number of threads used can be controlled via the `threads` parameter.
+    #'
+    #' @param model_name Name of the model to use.
+    #' @param known_variable The name of the variable to condition on.
+    #' @param value_range A numeric vector specifying the range of values for the known variable.
+    #' @param n Number of samples to generate for each value in the range.
+    #' @param parallel Logical, whether to process the range values in parallel. Default is `FALSE`.
+    #' @param threads Integer, the number of threads to use if `parallel = TRUE`. Defaults to all available cores minus one.
+    #'
+    #' @return A `data.table` containing conditional predictions for the specified range.
+    #'
+    #' @export
+    conditional_range_prediction = function(model_name, known_variable, value_range, n = 100, parallel = FALSE, threads = NULL) {
+      # Validate inputs
+      if (!is.character(known_variable) || length(known_variable) != 1) {
+        stop("known_variable must be a single character string representing a variable name.")
+      }
+      if (!is.numeric(value_range)) {
+        stop("value_range must be a numeric vector.")
+      }
+
+      # Function to process a single value
+      process_value <- function(value) {
+        set.seed(batch_id)
+        message(sprintf("Processing conditional prediction for %s = %f", known_variable, value))
+        known_values <- list()
+        known_values[[known_variable]] <- value
+        predictions <- self$conditional_prediction(model_name = model_name, known_values = known_values, n = n)
+
+        if (!is.null(predictions)) {
+          # Add the conditioned value to the predictions
+          predictions[, (known_variable) := value]
+          return(predictions)
+        } else {
+          return(NULL)
+        }
+      }
+
+      # Parallel or sequential processing
+      results_list <- tryCatch({
+        if (parallel) {
+          # Load the future.apply package
+          options(future.rng.onMisuse = "ignore")
+          RNGkind("L'Ecuyer-CMRG")
+          set.seed()
+
+          # Set the number of threads
+          num_threads <- if (is.null(threads)) future::availableCores() - 1 else min(threads, future::availableCores())
+          message(sprintf("Using %d threads for parallel processing.", num_threads))
+          future::plan(future::multisession, workers = num_threads)
+
+          # Process values in parallel
+          future.apply::future_lapply(value_range, process_value, future.seed = TRUE)
+        } else {
+          # Process values sequentially
+          lapply(value_range, process_value) # value = 0.2
+        }
+      }, error = function(e) {
+        message("Error during conditional range prediction: ", e$message)
+        return(NULL)
+      }, finally = {
+        # Ensure all workers are shut down if parallel
+        if (parallel) {
+          future::plan("sequential")
+        }
+      })
+
+      # Combine results into a single data.table
+      if (length(results_list) > 0) {
+        final_results <- data.table::rbindlist(results_list, idcol = "ConditionedValue", use.names = TRUE, fill = TRUE)
+        return(final_results)
+      } else {
+        warning("No predictions were generated. Please check your inputs.")
+        return(NULL)
+      }
+    },
+
     #' @description Generate hybrid simulations (conditional + unconditional).
     #' @param model_name Name of the model to use.
     #' @param known_values A named list of known variable values.
     #' @param n Number of instances to simulate.
-    #' @return A data.table of hybrid simulations.
+    #' @return A list containing two `data.table` objects: one for conditional predictions
+    #' and another for unconditional simulations.
+    #' @export
     hybrid_simulation = function(model_name, known_values, n = 100) {
-      fit <- self$fit_results[[model_name]]
       tryCatch({
-        conditional <- copula::conditionalCopula(fit@copula, known_values)
-        unconditional <- copula::rCopula(n, fit@copula)
+
+        # Perform conditional predictions
+        conditional <- self$conditional_prediction(
+          model_name = model_name,
+          known_values = known_values,
+          n = n
+        )
+
+        # Perform unconditional predictions
+        unconditional <- self$batch_prediction(
+          model_name = model_name,
+          n = n
+        )
+
+        # Return both results
         list(Conditional = conditional, Unconditional = unconditional)
       }, error = function(e) {
         message("Error in hybrid simulation for model '", model_name, "': ", e$message)
@@ -253,6 +414,7 @@ ModelScorer <- R6::R6Class(
     #' @param model_name Name of the model to use.
     #' @param n Number of samples to draw.
     #' @return Weighted samples.
+    #' @export
     importance_sampling = function(model_name, n = 1000) {
       fit <- self$fit_results[[model_name]]
       tryCatch({
@@ -269,6 +431,7 @@ ModelScorer <- R6::R6Class(
     #' @param model_name Name of the model to use.
     #' @param n Number of extreme event scenarios to simulate.
     #' @return A data.table of extreme event simulations.
+    #' @export
     stress_testing = function(model_name, n = 100) {
       fit <- self$fit_results[[model_name]]
       tryCatch({
@@ -279,106 +442,6 @@ ModelScorer <- R6::R6Class(
         message("Error in stress testing for model '", model_name, "': ", e$message)
         NULL
       })
-    },
-
-    #' @description Visualize single instance prediction.
-    #' @param predictions A named list of single instance predictions.
-    #' @return An echarts4r bar chart visualization.
-    visualize_single_instance_prediction = function(predictions) {
-      pred_dt <- data.table::as.data.table(predictions)
-      pred_dt[, Variable := names(predictions)]
-      pred_dt |>
-        echarts4r::e_charts(Variable) |>
-        echarts4r::e_bar(value = V1, name = "Prediction") |>
-        echarts4r::e_title("Single Instance Prediction") |>
-        echarts4r::e_theme("dark")
-    },
-
-    #' @description Visualize batch predictions.
-    #' @param batch_predictions A data.table of batch predictions.
-    #' @return An echarts4r scatter plot visualization.
-    visualize_batch_predictions = function(batch_predictions) {
-      batch_predictions |>
-        data.table::as.data.table() |>
-        echarts4r::e_charts(Var1) |>
-        echarts4r::e_scatter(Var2, name = "Var2") |>
-        echarts4r::e_scatter(Var3, name = "Var3") |>
-        echarts4r::e_title("Batch Predictions") |>
-        echarts4r::e_theme("dark")
-    },
-
-    #' @description Visualize large-scale simulation.
-    #' @param large_scale_predictions A data.table of large-scale predictions.
-    #' @return An echarts4r density plot visualization.
-    visualize_large_scale_simulation = function(large_scale_predictions) {
-      large_scale_predictions |>
-        data.table::as.data.table() |>
-        echarts4r::e_charts(Var1) |>
-        echarts4r::e_density(name = "Var1 Density") |>
-        echarts4r::e_title("Large-Scale Simulation Density for Var1") |>
-        echarts4r::e_theme("dark")
-    },
-
-    #' @description Visualize conditional predictions.
-    #' @param conditional_predictions A data.table of conditional predictions.
-    #' @return An echarts4r scatter plot visualization.
-    visualize_conditional_predictions = function(conditional_predictions) {
-      conditional_predictions |>
-        data.table::as.data.table() |>
-        echarts4r::e_charts(Var1) |>
-        echarts4r::e_scatter(Var2, name = "Conditioned Var2") |>
-        echarts4r::e_scatter(Var3, name = "Conditioned Var3") |>
-        echarts4r::e_title("Conditional Predictions") |>
-        echarts4r::e_theme("dark")
-    },
-
-    #' @description Visualize hybrid simulations.
-    #' @param hybrid_predictions A list with conditional and unconditional components.
-    #' @return A list of echarts4r density plots.
-    visualize_hybrid_simulation = function(hybrid_predictions) {
-      conditional <- hybrid_predictions$Conditional |> data.table::as.data.table()
-      unconditional <- hybrid_predictions$Unconditional |> data.table::as.data.table()
-
-      plots <- list(
-        Conditional = conditional |>
-          echarts4r::e_charts(Var1) |>
-          echarts4r::e_density(name = "Conditional Density") |>
-          echarts4r::e_title("Hybrid Simulation - Conditional Component") |>
-          echarts4r::e_theme("dark"),
-
-        Unconditional = unconditional |>
-          echarts4r::e_charts(Var1) |>
-          echarts4r::e_density(name = "Unconditional Density") |>
-          echarts4r::e_title("Hybrid Simulation - Unconditional Component") |>
-          echarts4r::e_theme("dark")
-      )
-      return(plots)
-    },
-
-    #' @description Visualize importance sampling.
-    #' @param importance_samples A list with samples and weights.
-    #' @return An echarts4r bubble plot visualization.
-    visualize_importance_sampling = function(importance_samples) {
-      samples <- data.table::as.data.table(importance_samples$Samples)
-      weights <- importance_samples$Weights
-      samples[, Weight := weights]
-      samples |>
-        echarts4r::e_charts(Var1) |>
-        echarts4r::e_bubble(Var2, Var3, Weight, name = "Weighted Samples") |>
-        echarts4r::e_title("Importance Sampling Visualization") |>
-        echarts4r::e_theme("dark")
-    },
-
-    #' @description Visualize stress testing results.
-    #' @param stress_test_results A data.table of stress test results.
-    #' @return An echarts4r density plot visualization for extreme events.
-    visualize_stress_testing = function(stress_test_results) {
-      stress_test_results |>
-        data.table::as.data.table() |>
-        echarts4r::e_charts(Var1) |>
-        echarts4r::e_density(name = "Extreme Event Density") |>
-        echarts4r::e_title("Stress Testing - Extreme Events") |>
-        echarts4r::e_theme("dark")
     }
   ),
 
