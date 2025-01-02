@@ -341,13 +341,13 @@ ModelScorer <- R6::R6Class(
 
           # Process combinations in parallel
           future.apply::future_lapply(seq_len(nrow(combinations)), function(i) {
-            known_values <- as.list(combinations[i, ])
+            known_values <- as.list(combinations[i, , drop = FALSE])
             private$process_value_conditional(known_values = known_values, batch_id = i)
           }, future.seed = TRUE)
         } else {
           # Process combinations sequentially
           lapply(seq_len(nrow(combinations)), function(i) {
-            known_values <- as.list(combinations[i, ])
+            known_values <- as.list(combinations[i, , drop = FALSE])
             private$process_value_conditional(known_values = known_values, batch_id = i)
           })
         }
@@ -457,13 +457,13 @@ ModelScorer <- R6::R6Class(
 
           # Process combinations in parallel
           future.apply::future_lapply(seq_len(nrow(combinations)), function(i) {
-            known_values <- as.list(combinations[i, ])
+            known_values <- as.list(combinations[i, , drop = FALSE])
             private$process_value_hybrid(value = known_values, batch_id = i)
           }, future.seed = TRUE)
         } else {
           # Process combinations sequentially
           lapply(seq_len(nrow(combinations)), function(i) { # i = 1
-            known_values <- as.list(combinations[i, ])
+            known_values <- as.list(combinations[i, , drop = FALSE])
             private$process_value_hybrid(value = known_values, batch_id = i)
           })
         }
