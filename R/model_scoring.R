@@ -139,171 +139,52 @@ ModelScorer <- R6::R6Class(
       })
     },
 
-    #' @description Generate conditional predictions for a subset of variables.
-    #'
-    #' @details
-    #' The `conditional_prediction()` function generates conditional samples from a fitted copula model
-    #' based on specified known values for a subset of variables. This method is particularly useful in
-    #' scenarios where some variables are observed (known), and predictions or simulations are required
-    #' for the remaining variables, conditioned on the observed values.
-    #'
-    #' The function supports a wide range of copula families, including both multivariate and bivariate
-    #' copulas, as well as rotated and asymmetric copula models. The appropriate private method is
-    #' dynamically selected based on the copula type to handle the specifics of each family.
-    #'
-    #' - **Input Parameters**:
-    #'   - `model_name`: The name of the fitted copula model from which predictions will be generated.
-    #'   - `known_values`: A named list where the names correspond to variable names, and the values
-    #'     represent the observed values for those variables.
-    #'   - `n`: The number of conditional samples to generate.
-    #'
-    #' - **Process**:
-    #'   1. Validate that the `model_name` corresponds to a fitted copula model and that the `known_values`
-    #'      variables match the names of the dataset used for model fitting.
-    #'   2. Convert the known values into pseudo-observations using their empirical cumulative
-    #'      distribution functions (ECDFs).
-    #'   3. Call the appropriate private conditional sampling method for the copula family, which computes
-    #'      the conditional distribution of the remaining variables given the known values.
-    #'   4. Combine the conditional samples with the known values to produce the final result.
-    #'
-    #' - **Output**:
-    #'   - A `data.table` containing the conditional samples for the remaining variables, along with the
-    #'     known values for the conditioned variables.
-    #'
-    #' - **Error Handling**:
-    #'   If the copula type is not supported or if the input parameters are invalid, the function will
-    #'   return `NULL` with an appropriate warning or error message.
-    #'
-    #' - **Applications**:
-    #'   - Use cases include scenarios in finance, insurance, or any domain requiring predictions under
-    #'     partially observed conditions.
-    #'
-    #' **Note**: The method currently supports conditioning on a subset of variables for both multivariate
-    #' and bivariate copulas. Some copula families (e.g., rotated copulas) require special handling, which
-    #' is implemented through the private methods.
-    #'
-    #' @param model_name Name of the model to use.
-    #' @param known_values A named list of known variable values.
-    #' @param n Number of samples to get
-    #'
-    #' @return A data.table of conditional predictions.
-    #'
-    #' @export
-    #' @description Generate conditional predictions for a subset of variables.
-    #'
-    #' @details
-    #' The `conditional_prediction()` function generates conditional samples from a fitted copula model
-    #' based on specified known values or ranges for a subset of variables. This method is particularly
-    #' useful in scenarios where some variables are observed (known) with exact values or are constrained
-    #' within specific ranges, and predictions or simulations are required for the remaining variables.
-    #'
-    #' - **Input Parameters**:
-    #'   - `model_name`: The name of the fitted copula model from which predictions will be generated.
-    #'   - `known_values`: A named list where:
-    #'     - **Single Values**: The value represents an exact observation of the variable (e.g., `X = 0.5`).
-    #'       These are converted into pseudo-observations using the empirical cumulative distribution function (ECDF).
-    #'     - **Ranges**: The value is a vector of length 2 (e.g., `X = c(0.4, 0.6)`), representing the range within
-    #'       which the variable is constrained. Samples are drawn uniformly within the range during each iteration.
-    #'   - `n`: The number of conditional samples to generate.
-    #'
-    #' - **Process**:
-    #'   1. Validate that `model_name` corresponds to a fitted copula model and that `known_values` variables
-    #'      match the dataset used for model fitting.
-    #'   2. Process `known_values`:
-    #'      - For single values, convert them into pseudo-observations using their ECDF.
-    #'      - For ranges, sample uniformly within the range for each iteration.
-    #'   3. Dynamically select the appropriate private conditional sampling method for the copula family.
-    #'   4. Compute the conditional distribution of the remaining variables given the known values or sampled ranges.
-    #'   5. Combine the conditional samples with the known values/ranges to produce the final result.
-    #'
-    #' - **Output**:
-    #'   - A `data.table` containing the conditional samples for the remaining variables, along with the
-    #'     known values or sampled values for the conditioned variables.
-    #'
-    #' - **Error Handling**:
-    #'   - If `model_name` is not a supported copula type or `known_values` contains invalid inputs, the
-    #'     function returns `NULL` with an appropriate warning or error message.
-    #'
-    #' - **Applications**:
-    #'   - Use cases include finance, insurance, and other domains requiring predictions under partially
-    #'     observed or constrained conditions.
-    #'
-    #' @param model_name Name of the model to use.
-    #' @param known_values A named list of known variable values or ranges.
-    #'   - For single values: Provide a scalar value (e.g., `X = 0.5`).
-    #'   - For ranges: Provide a vector of length 2 (e.g., `X = c(0.4, 0.6)`).
-    #' @param n Number of conditional samples to generate.
-    #'
-    #' @return A `data.table` of conditional predictions.
-    #'
-    #' @export
-    conditional_prediction = function(model_name, known_values, n = 1) {
-      fit <- self$fit_results[[model_name]]
-
-      # Determine copula type
-      if (model_name %in% c(
-        "Gaussian",
-        "tCopula",
-        "Clayton",
-        "Gumbel",
-        "Frank",
-        "Joe"
-      )) {
-        copula_model <- fit@copula
-      } else {
-        copula_model <- "vine"
-      }
-
-      tryCatch({
-        # Ensure known_values is valid
-        if (!all(names(known_values) %in% colnames(self$data))) {
-          warning("Some known_values do not match column names in the dataset. Returning NULL.")
-          return(NULL)
-        }
-
-        # Delegate to the appropriate private method based on copula type
-        if (inherits(copula_model, "normalCopula")) {
-          return(private$conditional_gaussian(fit, known_values, n))
-        } else if (inherits(copula_model, "tCopula")) {
-          return(private$conditional_t(fit, known_values, n))
-        } else if (inherits(copula_model, "claytonCopula")) {
-          return(private$conditional_clayton(fit, known_values, n))
-        } else if (inherits(copula_model, "gumbelCopula")) {
-          return(private$conditional_gumbel(fit, known_values, n))
-        } else if (inherits(copula_model, "frankCopula")) {
-          return(private$conditional_frank(fit, known_values, n))
-        } else if (inherits(copula_model, "joeCopula")) {
-          return(private$conditional_joe(fit, known_values, n))
-        } else if (model_name %in% c("BB1", "BB6", "BB7", "BB8")) {
-          conditional_function <- private[[paste0("conditional_", tolower(model_name))]]
-          return(conditional_function(fit, known_values, n))
-        } else if (grepl("Rotated", model_name)) {
-          # Rotated copulas (e.g., Rotated Clayton (180))
-          model_key <- gsub("[()\\s]", "_", tolower(model_name))
-          conditional_function <- private[[paste0("conditional_", model_key)]]
-          return(conditional_function(fit, known_values, n))
-        } else {
-          message("Conditional sampling is not implemented for this copula type.")
-          return(NULL)
-        }
-      }, error = function(e) {
-        message("Error in conditional prediction for model '", model_name, "': ", e$message)
-        NULL
-      })
-    },
-
     #' @description Generate conditional predictions for a range of known values.
     #'
     #' @details
-    #' This function generates conditional predictions over a range of values for a single known variable.
-    #' It iteratively calls `conditional_prediction()` for each value in the range, with an option to
-    #' parallelize the computations for efficiency.
+    #' The `conditional_range_prediction()` function generates conditional samples from a fitted copula model
+    #' for all combinations of specified ranges for multiple variables. This batch version is particularly
+    #' useful for scenarios where multiple variables are partially observed or constrained within specific
+    #' ranges, and predictions or simulations are required for the remaining variables across all combinations.
     #'
-    #' - **Parallel Processing**:
-    #'   - If `parallel = TRUE`, the function uses the `future.apply` package to process the range
-    #'     values concurrently.
-    #'   - The number of threads used can be controlled via the `threads` parameter.
+    #' - **Input Parameters**:
+    #'   - `model_name`: The name of the fitted copula model from which predictions will be generated.
+    #'   - `known_ranges`: A named list where:
+    #'     - Each key represents a variable name.
+    #'     - The value is either:
+    #'       - **Single Value**: Represents an exact observation for that variable (e.g., `X = 0.5`).
+    #'       - **Range**: A numeric vector (e.g., `X = c(0.4, 0.6)`) representing the range within which the variable
+    #'         is constrained.
+    #'   - `n`: The number of conditional samples to generate for each combination.
+    #'   - `parallel`: Logical. If `TRUE`, computations are distributed across multiple threads for efficiency.
+    #'   - `threads`: Integer. Specifies the number of threads to use if `parallel = TRUE`. Defaults to one less than
+    #'     the number of available cores if not specified.
     #'
+    #' - **Process**:
+    #'   1. Validate that `model_name` corresponds to a fitted copula model and that all `known_ranges` variables
+    #'      match the dataset used for model fitting.
+    #'   2. Generate all combinations of values based on `known_ranges`:
+    #'      - For single values, treat them as exact observations.
+    #'      - For ranges, sample uniformly within the range for each combination.
+    #'   3. For each combination of known values:
+    #'      - Dynamically select the appropriate private conditional sampling method for the copula family.
+    #'      - Compute the conditional distribution of the remaining variables given the known values.
+    #'   4. Combine the results into a unified `data.table` containing all conditional samples.
+    #'
+    #' - **Output**:
+    #'   - A `data.table` containing:
+    #'     - The conditional samples for the remaining variables.
+    #'     - The fixed or sampled values for the known variables for each combination.
+    #'     - A `batch_id` column that uniquely identifies each combination of known variable values.
+    #'
+    #' - **Error Handling**:
+    #'   - If `model_name` is not a supported copula type or `known_ranges` contains invalid inputs, the
+    #'     function returns `NULL` with an appropriate warning or error message.
+    #'
+    #' - **Applications**:
+    #'   - Suitable for use cases in finance, insurance, and other domains requiring predictions under multiple
+    #'     partially observed or constrained conditions. The batch version allows for efficient exploration of
+    #'     the conditional distribution over a wide range of possible scenarios.
     #' @param model_name Name of the model to use.
     #' @param known_variable The name of the variable to condition on.
     #' @param value_range A numeric vector specifying the range of values for the known variable.
@@ -369,37 +250,6 @@ ModelScorer <- R6::R6Class(
         warning("No predictions were generated. Please check your inputs.")
         return(NULL)
       }
-    },
-
-    #' @description Generate hybrid simulations (conditional + unconditional).
-    #' @param model_name Name of the model to use.
-    #' @param known_values A named list of known variable values.
-    #' @param n Number of instances to simulate.
-    #' @return A list containing two `data.table` objects: one for conditional predictions
-    #' and another for unconditional simulations.
-    #' @export
-    hybrid_simulation = function(model_name, known_values, n = 100) {
-      tryCatch({
-
-        # Perform conditional predictions
-        conditional <- self$conditional_prediction(
-          model_name = model_name,
-          known_values = known_values,
-          n = n
-        )
-
-        # Perform unconditional predictions
-        unconditional <- self$batch_prediction(
-          model_name = model_name,
-          n = n
-        )
-
-        # Return both results
-        list(Conditional = conditional, Unconditional = unconditional)
-      }, error = function(e) {
-        message("Error in hybrid simulation for model '", model_name, "': ", e$message)
-        NULL
-      })
     },
 
     #' @description Generate hybrid simulations for a range of known values.
@@ -550,7 +400,7 @@ ModelScorer <- R6::R6Class(
     process_value_conditional = function(known_values, batch_id) {
       # set.seed(batch_id)
       message(sprintf("Processing conditional prediction for batch_id = %d", batch_id))
-      predictions <- self$conditional_prediction(model_name = model_name, known_values = known_values, n = n)
+      predictions <- private$conditional_prediction(model_name = model_name, known_values = known_values, n = n)
 
       if (!is.null(predictions)) {
         # Add the conditioned value to the predictions
@@ -558,6 +408,62 @@ ModelScorer <- R6::R6Class(
       } else {
         return(NULL)
       }
+    },
+
+    # Private method for processing a single batch from conditional_range_predictions()
+    conditional_prediction = function(model_name, known_values, n = 1) {
+      fit <- self$fit_results[[model_name]]
+
+      # Determine copula type
+      if (model_name %in% c(
+        "Gaussian",
+        "tCopula",
+        "Clayton",
+        "Gumbel",
+        "Frank",
+        "Joe"
+      )) {
+        copula_model <- fit@copula
+      } else {
+        copula_model <- "vine"
+      }
+
+      tryCatch({
+        # Ensure known_values is valid
+        if (!all(names(known_values) %in% colnames(self$data))) {
+          warning("Some known_values do not match column names in the dataset. Returning NULL.")
+          return(NULL)
+        }
+
+        # Delegate to the appropriate private method based on copula type
+        if (inherits(copula_model, "normalCopula")) {
+          return(private$conditional_gaussian(fit, known_values, n))
+        } else if (inherits(copula_model, "tCopula")) {
+          return(private$conditional_t(fit, known_values, n))
+        } else if (inherits(copula_model, "claytonCopula")) {
+          return(private$conditional_clayton(fit, known_values, n))
+        } else if (inherits(copula_model, "gumbelCopula")) {
+          return(private$conditional_gumbel(fit, known_values, n))
+        } else if (inherits(copula_model, "frankCopula")) {
+          return(private$conditional_frank(fit, known_values, n))
+        } else if (inherits(copula_model, "joeCopula")) {
+          return(private$conditional_joe(fit, known_values, n))
+        } else if (model_name %in% c("BB1", "BB6", "BB7", "BB8")) {
+          conditional_function <- private[[paste0("conditional_", tolower(model_name))]]
+          return(conditional_function(fit, known_values, n))
+        } else if (grepl("Rotated", model_name)) {
+          # Rotated copulas (e.g., Rotated Clayton (180))
+          model_key <- gsub("[()\\s]", "_", tolower(model_name))
+          conditional_function <- private[[paste0("conditional_", model_key)]]
+          return(conditional_function(fit, known_values, n))
+        } else {
+          message("Conditional sampling is not implemented for this copula type.")
+          return(NULL)
+        }
+      }, error = function(e) {
+        message("Error in conditional prediction for model '", model_name, "': ", e$message)
+        NULL
+      })
     },
 
     # Private method for processing a single batch in hybrid_range_predictions()
@@ -569,7 +475,7 @@ ModelScorer <- R6::R6Class(
       message(sprintf("Processing hybrid simulation for batch_id = %d, %f", batch_id, value))
 
       # Run the hybrid simulation
-      sim_output <- self$hybrid_simulation(model_name = model_name, known_values = value, n = n)
+      sim_output <- private$hybrid_simulation(model_name = model_name, known_values = value, n = n)
 
       # Validate simulation output
       if (!all(c("Conditional", "Unconditional") %in% names(sim_output))) {
@@ -595,6 +501,31 @@ ModelScorer <- R6::R6Class(
       final[, batch_id := batch_id]
 
       return(final)
+    },
+
+    # Private method for processing a single batch from hybrid_range_simulation()
+    hybrid_simulation = function(model_name, known_values, n = 100) {
+      tryCatch({
+
+        # Perform conditional predictions
+        conditional <- self$conditional_prediction(
+          model_name = model_name,
+          known_values = known_values,
+          n = n
+        )
+
+        # Perform unconditional predictions
+        unconditional <- self$batch_prediction(
+          model_name = model_name,
+          n = n
+        )
+
+        # Return both results
+        list(Conditional = conditional, Unconditional = unconditional)
+      }, error = function(e) {
+        message("Error in hybrid simulation for model '", model_name, "': ", e$message)
+        NULL
+      })
     },
 
     # Gaussian Conditional Sampling
