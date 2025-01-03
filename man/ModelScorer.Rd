@@ -16,6 +16,85 @@ This method generates large-scale simulations by splitting the total number of s
 into smaller batches. If \code{parallel} is set to TRUE, it uses the \code{future.apply} package to
 process batches in parallel. On sequential processing, batches are processed one at a time.
 The function ensures that all parallel sessions are closed upon completion or in the case of an error.
+
+The \code{conditional_range_prediction()} function generates conditional samples from a fitted copula model
+for all combinations of specified ranges for multiple variables. This batch version is particularly
+useful for scenarios where multiple variables are partially observed or constrained within specific
+ranges, and predictions or simulations are required for the remaining variables across all combinations.
+\itemize{
+\item \strong{Input Parameters}:
+\itemize{
+\item \code{model_name}: The name of the fitted copula model from which predictions will be generated.
+\item \code{known_ranges}: A named list where:
+\itemize{
+\item Each key represents a variable name.
+\item The value is either:
+\itemize{
+\item \strong{Single Value}: Represents an exact observation for that variable (e.g., \code{X = 0.5}).
+\item \strong{Range}: A numeric vector (e.g., \code{X = c(0.4, 0.6)}) representing the range within which the variable
+is constrained.
+}
+}
+\item \code{n}: The number of conditional samples to generate for each combination.
+\item \code{parallel}: Logical. If \code{TRUE}, computations are distributed across multiple threads for efficiency.
+\item \code{threads}: Integer. Specifies the number of threads to use if \code{parallel = TRUE}. Defaults to one less than
+the number of available cores if not specified.
+}
+\item \strong{Process}:
+\enumerate{
+\item Validate that \code{model_name} corresponds to a fitted copula model and that all \code{known_ranges} variables
+match the dataset used for model fitting.
+\item Generate all combinations of values based on \code{known_ranges}:
+\itemize{
+\item For single values, treat them as exact observations.
+\item For ranges, sample uniformly within the range for each combination.
+}
+\item For each combination of known values:
+\itemize{
+\item Dynamically select the appropriate private conditional sampling method for the copula family.
+\item Compute the conditional distribution of the remaining variables given the known values.
+}
+\item Combine the results into a unified \code{data.table} containing all conditional samples.
+}
+\item \strong{Output}:
+\itemize{
+\item A \code{data.table} containing:
+\itemize{
+\item The conditional samples for the remaining variables.
+\item The fixed or sampled values for the known variables for each combination.
+\item A \code{batch_id} column that uniquely identifies each combination of known variable values.
+}
+}
+\item \strong{Error Handling}:
+\itemize{
+\item If \code{model_name} is not a supported copula type or \code{known_ranges} contains invalid inputs, the
+function returns \code{NULL} with an appropriate warning or error message.
+}
+\item \strong{Applications}:
+\itemize{
+\item Suitable for use cases in finance, insurance, and other domains requiring predictions under multiple
+partially observed or constrained conditions. The batch version allows for efficient exploration of
+the conditional distribution over a wide range of possible scenarios.
+}
+}
+
+The \code{hybrid_range_simulation()} function extends \code{hybrid_simulation()} by enabling simulations
+over a range of values for one known variable. It generates both conditional and unconditional
+samples for each value in the specified range and combines the results.
+\itemize{
+\item \strong{Input Parameters}:
+\itemize{
+\item \code{model_name}: The name of the fitted copula model to use for simulations.
+\item \code{known_ranges}: List containing name as key and variable values as the values
+\item \code{n}: Number of instances to simulate for each known value.
+\item \code{parallel}: Logical indicating whether to run the simulation in parallel. Default is \code{FALSE}.
+\item \code{threads}: Number of parallel threads to use if \code{parallel = TRUE}. Defaults to available cores minus one.
+}
+\item \strong{Output}:
+\itemize{
+\item A \code{data.table} containing the hybrid simulation results for all values in the specified range.
+}
+}
 }
 \section{Public fields}{
 \if{html}{\out{<div class="r6-fields">}}
@@ -35,17 +114,10 @@ The function ensures that all parallel sessions are closed upon completion or in
 \item \href{#method-ModelScorer-single_instance_prediction}{\code{ModelScorer$single_instance_prediction()}}
 \item \href{#method-ModelScorer-batch_prediction}{\code{ModelScorer$batch_prediction()}}
 \item \href{#method-ModelScorer-large_scale_simulation}{\code{ModelScorer$large_scale_simulation()}}
-\item \href{#method-ModelScorer-conditional_prediction}{\code{ModelScorer$conditional_prediction()}}
-\item \href{#method-ModelScorer-hybrid_simulation}{\code{ModelScorer$hybrid_simulation()}}
+\item \href{#method-ModelScorer-conditional_range_prediction}{\code{ModelScorer$conditional_range_prediction()}}
+\item \href{#method-ModelScorer-hybrid_range_simulation}{\code{ModelScorer$hybrid_range_simulation()}}
 \item \href{#method-ModelScorer-importance_sampling}{\code{ModelScorer$importance_sampling()}}
 \item \href{#method-ModelScorer-stress_testing}{\code{ModelScorer$stress_testing()}}
-\item \href{#method-ModelScorer-visualize_single_instance_prediction}{\code{ModelScorer$visualize_single_instance_prediction()}}
-\item \href{#method-ModelScorer-visualize_batch_predictions}{\code{ModelScorer$visualize_batch_predictions()}}
-\item \href{#method-ModelScorer-visualize_large_scale_simulation}{\code{ModelScorer$visualize_large_scale_simulation()}}
-\item \href{#method-ModelScorer-visualize_conditional_predictions}{\code{ModelScorer$visualize_conditional_predictions()}}
-\item \href{#method-ModelScorer-visualize_hybrid_simulation}{\code{ModelScorer$visualize_hybrid_simulation()}}
-\item \href{#method-ModelScorer-visualize_importance_sampling}{\code{ModelScorer$visualize_importance_sampling()}}
-\item \href{#method-ModelScorer-visualize_stress_testing}{\code{ModelScorer$visualize_stress_testing()}}
 \item \href{#method-ModelScorer-clone}{\code{ModelScorer$clone()}}
 }
 }
@@ -149,12 +221,18 @@ A \code{data.table} containing all simulated values, with a \code{BatchID} colum
 }
 }
 \if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-ModelScorer-conditional_prediction"></a>}}
-\if{latex}{\out{\hypertarget{method-ModelScorer-conditional_prediction}{}}}
-\subsection{Method \code{conditional_prediction()}}{
-Generate conditional predictions for a subset of variables.
+\if{html}{\out{<a id="method-ModelScorer-conditional_range_prediction"></a>}}
+\if{latex}{\out{\hypertarget{method-ModelScorer-conditional_range_prediction}{}}}
+\subsection{Method \code{conditional_range_prediction()}}{
+Generate conditional predictions for a range of known values.
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{ModelScorer$conditional_prediction(model_name, known_values, n = 1)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{ModelScorer$conditional_range_prediction(
+  model_name,
+  known_ranges,
+  n = 100,
+  parallel = FALSE,
+  threads = NULL
+)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
@@ -162,23 +240,33 @@ Generate conditional predictions for a subset of variables.
 \describe{
 \item{\code{model_name}}{Name of the model to use.}
 
-\item{\code{known_values}}{A named list of known variable values.}
+\item{\code{known_ranges}}{List with variable name as key and variable values as the list values}
 
-\item{\code{n}}{Number of samples to get}
+\item{\code{n}}{Number of samples to generate for each value in the range.}
+
+\item{\code{parallel}}{Logical, whether to process the range values in parallel. Default is \code{FALSE}.}
+
+\item{\code{threads}}{Integer, the number of threads to use if \code{parallel = TRUE}. Defaults to all available cores minus one.}
 }
 \if{html}{\out{</div>}}
 }
 \subsection{Returns}{
-A data.table of conditional predictions.
+A \code{data.table} containing conditional predictions for the specified range.
 }
 }
 \if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-ModelScorer-hybrid_simulation"></a>}}
-\if{latex}{\out{\hypertarget{method-ModelScorer-hybrid_simulation}{}}}
-\subsection{Method \code{hybrid_simulation()}}{
-Generate hybrid simulations (conditional + unconditional).
+\if{html}{\out{<a id="method-ModelScorer-hybrid_range_simulation"></a>}}
+\if{latex}{\out{\hypertarget{method-ModelScorer-hybrid_range_simulation}{}}}
+\subsection{Method \code{hybrid_range_simulation()}}{
+Generate hybrid simulations for a range of known values.
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{ModelScorer$hybrid_simulation(model_name, known_values, n = 100)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{ModelScorer$hybrid_range_simulation(
+  model_name,
+  known_ranges,
+  n = 100,
+  parallel = FALSE,
+  threads = NULL
+)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
@@ -186,14 +274,18 @@ Generate hybrid simulations (conditional + unconditional).
 \describe{
 \item{\code{model_name}}{Name of the model to use.}
 
-\item{\code{known_values}}{A named list of known variable values.}
+\item{\code{known_ranges}}{Name of the variable to condition on.}
 
-\item{\code{n}}{Number of instances to simulate.}
+\item{\code{n}}{Number of instances to simulate for each known value.}
+
+\item{\code{parallel}}{Logical, whether to use parallel processing.}
+
+\item{\code{threads}}{Number of threads to use for parallel processing. Defaults to available cores minus one.}
 }
 \if{html}{\out{</div>}}
 }
 \subsection{Returns}{
-A data.table of hybrid simulations.
+A data.table of hybrid simulations for the specified range of values.
 }
 }
 \if{html}{\out{<hr>}}
@@ -238,146 +330,6 @@ Perform stress testing by simulating extreme events.
 }
 \subsection{Returns}{
 A data.table of extreme event simulations.
-}
-}
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-ModelScorer-visualize_single_instance_prediction"></a>}}
-\if{latex}{\out{\hypertarget{method-ModelScorer-visualize_single_instance_prediction}{}}}
-\subsection{Method \code{visualize_single_instance_prediction()}}{
-Visualize single instance prediction.
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{ModelScorer$visualize_single_instance_prediction(predictions)}\if{html}{\out{</div>}}
-}
-
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{predictions}}{A named list of single instance predictions.}
-}
-\if{html}{\out{</div>}}
-}
-\subsection{Returns}{
-An echarts4r bar chart visualization.
-}
-}
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-ModelScorer-visualize_batch_predictions"></a>}}
-\if{latex}{\out{\hypertarget{method-ModelScorer-visualize_batch_predictions}{}}}
-\subsection{Method \code{visualize_batch_predictions()}}{
-Visualize batch predictions.
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{ModelScorer$visualize_batch_predictions(batch_predictions)}\if{html}{\out{</div>}}
-}
-
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{batch_predictions}}{A data.table of batch predictions.}
-}
-\if{html}{\out{</div>}}
-}
-\subsection{Returns}{
-An echarts4r scatter plot visualization.
-}
-}
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-ModelScorer-visualize_large_scale_simulation"></a>}}
-\if{latex}{\out{\hypertarget{method-ModelScorer-visualize_large_scale_simulation}{}}}
-\subsection{Method \code{visualize_large_scale_simulation()}}{
-Visualize large-scale simulation.
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{ModelScorer$visualize_large_scale_simulation(large_scale_predictions)}\if{html}{\out{</div>}}
-}
-
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{large_scale_predictions}}{A data.table of large-scale predictions.}
-}
-\if{html}{\out{</div>}}
-}
-\subsection{Returns}{
-An echarts4r density plot visualization.
-}
-}
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-ModelScorer-visualize_conditional_predictions"></a>}}
-\if{latex}{\out{\hypertarget{method-ModelScorer-visualize_conditional_predictions}{}}}
-\subsection{Method \code{visualize_conditional_predictions()}}{
-Visualize conditional predictions.
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{ModelScorer$visualize_conditional_predictions(conditional_predictions)}\if{html}{\out{</div>}}
-}
-
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{conditional_predictions}}{A data.table of conditional predictions.}
-}
-\if{html}{\out{</div>}}
-}
-\subsection{Returns}{
-An echarts4r scatter plot visualization.
-}
-}
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-ModelScorer-visualize_hybrid_simulation"></a>}}
-\if{latex}{\out{\hypertarget{method-ModelScorer-visualize_hybrid_simulation}{}}}
-\subsection{Method \code{visualize_hybrid_simulation()}}{
-Visualize hybrid simulations.
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{ModelScorer$visualize_hybrid_simulation(hybrid_predictions)}\if{html}{\out{</div>}}
-}
-
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{hybrid_predictions}}{A list with conditional and unconditional components.}
-}
-\if{html}{\out{</div>}}
-}
-\subsection{Returns}{
-A list of echarts4r density plots.
-}
-}
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-ModelScorer-visualize_importance_sampling"></a>}}
-\if{latex}{\out{\hypertarget{method-ModelScorer-visualize_importance_sampling}{}}}
-\subsection{Method \code{visualize_importance_sampling()}}{
-Visualize importance sampling.
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{ModelScorer$visualize_importance_sampling(importance_samples)}\if{html}{\out{</div>}}
-}
-
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{importance_samples}}{A list with samples and weights.}
-}
-\if{html}{\out{</div>}}
-}
-\subsection{Returns}{
-An echarts4r bubble plot visualization.
-}
-}
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-ModelScorer-visualize_stress_testing"></a>}}
-\if{latex}{\out{\hypertarget{method-ModelScorer-visualize_stress_testing}{}}}
-\subsection{Method \code{visualize_stress_testing()}}{
-Visualize stress testing results.
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{ModelScorer$visualize_stress_testing(stress_test_results)}\if{html}{\out{</div>}}
-}
-
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{stress_test_results}}{A data.table of stress test results.}
-}
-\if{html}{\out{</div>}}
-}
-\subsection{Returns}{
-An echarts4r density plot visualization for extreme events.
 }
 }
 \if{html}{\out{<hr>}}

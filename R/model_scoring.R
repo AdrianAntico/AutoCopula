@@ -186,8 +186,7 @@ ModelScorer <- R6::R6Class(
     #'     partially observed or constrained conditions. The batch version allows for efficient exploration of
     #'     the conditional distribution over a wide range of possible scenarios.
     #' @param model_name Name of the model to use.
-    #' @param known_variable The name of the variable to condition on.
-    #' @param value_range A numeric vector specifying the range of values for the known variable.
+    #' @param known_ranges List with variable name as key and variable values as the list values
     #' @param n Number of samples to generate for each value in the range.
     #' @param parallel Logical, whether to process the range values in parallel. Default is `FALSE`.
     #' @param threads Integer, the number of threads to use if `parallel = TRUE`. Defaults to all available cores minus one.
@@ -213,7 +212,7 @@ ModelScorer <- R6::R6Class(
           # Load the future.apply package
           options(future.rng.onMisuse = "ignore")
           RNGkind("L'Ecuyer-CMRG")
-          set.seed()
+          set.seed(42)
 
           # Set the number of threads
           num_threads <- if (is.null(threads)) future::availableCores() - 1 else min(threads, future::availableCores())
@@ -223,13 +222,13 @@ ModelScorer <- R6::R6Class(
           # Process combinations in parallel
           future.apply::future_lapply(seq_len(nrow(combinations)), function(i) {
             known_values <- as.list(combinations[i, , drop = FALSE])
-            private$process_value_conditional(known_values = known_values, batch_id = i)
+            private$process_value_conditional(model_name, known_values = known_values, n = n, batch_id = i)
           }, future.seed = TRUE)
         } else {
           # Process combinations sequentially
           lapply(seq_len(nrow(combinations)), function(i) {
             known_values <- as.list(combinations[i, , drop = FALSE])
-            private$process_value_conditional(known_values = known_values, batch_id = i)
+            private$process_value_conditional(model_name, known_values = known_values, n = n, batch_id = i)
           })
         }
       }, error = function(e) {
@@ -261,8 +260,7 @@ ModelScorer <- R6::R6Class(
     #'
     #' - **Input Parameters**:
     #'   - `model_name`: The name of the fitted copula model to use for simulations.
-    #'   - `known_variable`: The name of the variable to condition on.
-    #'   - `value_range`: A numeric vector specifying the range of values for the known variable.
+    #'   - `known_ranges`: List containing name as key and variable values as the values
     #'   - `n`: Number of instances to simulate for each known value.
     #'   - `parallel`: Logical indicating whether to run the simulation in parallel. Default is `FALSE`.
     #'   - `threads`: Number of parallel threads to use if `parallel = TRUE`. Defaults to available cores minus one.
@@ -271,8 +269,7 @@ ModelScorer <- R6::R6Class(
     #'   - A `data.table` containing the hybrid simulation results for all values in the specified range.
     #'
     #' @param model_name Name of the model to use.
-    #' @param known_variable Name of the variable to condition on.
-    #' @param value_range A numeric vector specifying the range of known values.
+    #' @param known_ranges Name of the variable to condition on.
     #' @param n Number of instances to simulate for each known value.
     #' @param parallel Logical, whether to use parallel processing.
     #' @param threads Number of threads to use for parallel processing. Defaults to available cores minus one.
@@ -298,7 +295,7 @@ ModelScorer <- R6::R6Class(
           # Load the future.apply package
           options(future.rng.onMisuse = "ignore")
           RNGkind("L'Ecuyer-CMRG")
-          set.seed()
+          set.seed(42)
 
           # Set the number of threads
           num_threads <- if (is.null(threads)) future::availableCores() - 1 else min(threads, future::availableCores())
@@ -308,13 +305,13 @@ ModelScorer <- R6::R6Class(
           # Process combinations in parallel
           future.apply::future_lapply(seq_len(nrow(combinations)), function(i) {
             known_values <- as.list(combinations[i, , drop = FALSE])
-            private$process_value_hybrid(value = known_values, batch_id = i)
+            private$process_value_hybrid(model_name, value = known_values, n = n, batch_id = i)
           }, future.seed = TRUE)
         } else {
           # Process combinations sequentially
           lapply(seq_len(nrow(combinations)), function(i) { # i = 1
             known_values <- as.list(combinations[i, , drop = FALSE])
-            private$process_value_hybrid(value = known_values, batch_id = i)
+            private$process_value_hybrid(model_name, value = known_values, n = n, batch_id = i)
           })
         }
       }, error = function(e) {
@@ -397,7 +394,7 @@ ModelScorer <- R6::R6Class(
     },
 
     # Private method for processing a single batch in conditional_range_predictions()
-    process_value_conditional = function(known_values, batch_id) {
+    process_value_conditional = function(model_name, known_values, n, batch_id) {
       # set.seed(batch_id)
       message(sprintf("Processing conditional prediction for batch_id = %d", batch_id))
       predictions <- private$conditional_prediction(model_name = model_name, known_values = known_values, n = n)
@@ -467,7 +464,7 @@ ModelScorer <- R6::R6Class(
     },
 
     # Private method for processing a single batch in hybrid_range_predictions()
-    process_value_hybrid = function(value, batch_id) {
+    process_value_hybrid = function(model_name, value, n, batch_id) {
       # Set seed for reproducibility
       set.seed(batch_id)
 
@@ -491,7 +488,8 @@ ModelScorer <- R6::R6Class(
 
       # Process Unconditional data
       Unconditional <- sim_output$Unconditional
-      Unconditional <- Unconditional[, .SD, .SDcols = setdiff(names(Unconditional), names(value))]
+      remove_cols <- names(value)
+      Unconditional[, (remove_cols) := NULL]
       data.table::setnames(Unconditional, paste0(names(Unconditional), "_uncond"))
 
       # Combine results
@@ -499,7 +497,6 @@ ModelScorer <- R6::R6Class(
 
       # Add batch_id to the result
       final[, batch_id := batch_id]
-
       return(final)
     },
 
