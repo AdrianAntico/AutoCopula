@@ -508,7 +508,7 @@ ModelScorer <- R6::R6Class(
       tryCatch({
 
         # Perform conditional predictions
-        conditional <- self$conditional_prediction(
+        conditional <- private$conditional_prediction(
           model_name = model_name,
           known_values = known_values,
           n = n
