@@ -116,8 +116,6 @@ samples for each value in the specified range and combines the results.
 \item \href{#method-ModelScorer-large_scale_simulation}{\code{ModelScorer$large_scale_simulation()}}
 \item \href{#method-ModelScorer-conditional_range_prediction}{\code{ModelScorer$conditional_range_prediction()}}
 \item \href{#method-ModelScorer-hybrid_range_simulation}{\code{ModelScorer$hybrid_range_simulation()}}
-\item \href{#method-ModelScorer-importance_sampling}{\code{ModelScorer$importance_sampling()}}
-\item \href{#method-ModelScorer-stress_testing}{\code{ModelScorer$stress_testing()}}
 \item \href{#method-ModelScorer-clone}{\code{ModelScorer$clone()}}
 }
 }
@@ -274,7 +272,7 @@ Generate hybrid simulations for a range of known values.
 \describe{
 \item{\code{model_name}}{Name of the model to use.}
 
-\item{\code{known_ranges}}{Name of the variable to condition on.}
+\item{\code{known_ranges}}{List with variable name as key and variable values as the list values}
 
 \item{\code{n}}{Number of instances to simulate for each known value.}
 
@@ -286,50 +284,6 @@ Generate hybrid simulations for a range of known values.
 }
 \subsection{Returns}{
 A data.table of hybrid simulations for the specified range of values.
-}
-}
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-ModelScorer-importance_sampling"></a>}}
-\if{latex}{\out{\hypertarget{method-ModelScorer-importance_sampling}{}}}
-\subsection{Method \code{importance_sampling()}}{
-Perform importance sampling for the copula model.
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{ModelScorer$importance_sampling(model_name, n = 1000)}\if{html}{\out{</div>}}
-}
-
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{model_name}}{Name of the model to use.}
-
-\item{\code{n}}{Number of samples to draw.}
-}
-\if{html}{\out{</div>}}
-}
-\subsection{Returns}{
-Weighted samples.
-}
-}
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-ModelScorer-stress_testing"></a>}}
-\if{latex}{\out{\hypertarget{method-ModelScorer-stress_testing}{}}}
-\subsection{Method \code{stress_testing()}}{
-Perform stress testing by simulating extreme events.
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{ModelScorer$stress_testing(model_name, n = 100)}\if{html}{\out{</div>}}
-}
-
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{model_name}}{Name of the model to use.}
-
-\item{\code{n}}{Number of extreme event scenarios to simulate.}
-}
-\if{html}{\out{</div>}}
-}
-\subsection{Returns}{
-A data.table of extreme event simulations.
 }
 }
 \if{html}{\out{<hr>}}

@@ -10,6 +10,9 @@ ModelFitter <- R6::R6Class(
     #' @field data A data.table containing the dataset for modeling.
     data = NULL,
 
+    #' @field data_matrix A matrix of post-transformed data for copula fitting
+    data_matrix = NULL,
+
     #' @field copula_library A pre-defined library of copula models.
     copula_library = list(
 
@@ -249,21 +252,57 @@ ModelFitter <- R6::R6Class(
   ),
 
   private = list(
+
+    # Transform all columns to 0, 1 using frank() / (n + 1)
+    transform = function(data) {
+      if (!data.table::is.data.table(data)) {
+        stop("Input data must be a data.table.")
+      }
+
+      # Initialize transformed data.table and marginals list
+      data_transformed <- data.table::copy(data)
+      marginals <- list()
+
+      # Loop through each column
+      for (col_name in names(data)) { # col_name = "Var1"
+
+        # Compute ranks (pseudo-observations)
+        data_transformed[, eval(col_name) := data.table::frank(get(col_name)) / (.N + 1)]
+
+        # Create inverse function for back-transformation
+        marginals[[col_name]] <- approxfun(
+          x = data_transformed[[col_name]],
+          y = data[[col_name]],
+          method = "linear",
+          rule = 2  # Extrapolate if values fall outside the range
+        )
+      }
+
+      # Store marginals in self$fit_results
+      self$fit_results[["marginals"]] <- marginals
+
+      # Return both transformed data and marginals
+      return(data_transformed)
+    },
+
+    # Fit one model
     fit_model = function(model_name) {
       # Validate that the model exists in the copula library
       if (!model_name %in% names(self$copula_library)) {
         stop("Model not found in library. Use list_models() to see available models.")
       }
 
-      # Transform data to pseudo-observations
-      data_transformed <- copula::pobs(as.matrix(self$data))
+      # Transform data to pseudo-observations using transform_with_frank
+      if (is.null(self$data_matrix)) {
+        self$data_matrix <- as.matrix(private$transform(self$data))
+      }
 
       # Retrieve model fitting function from the copula library
       model_info <- self$copula_library[[model_name]]
 
       # Fit the model using the specified fitting function
       fit <- tryCatch({
-        model_info$fit_function(data_transformed)
+        model_info$fit_function(self$data_matrix)
       }, error = function(e) {
         message("Error fitting model '", model_name, "': ", e$message)
         NULL

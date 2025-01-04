@@ -33,20 +33,12 @@ ModelScorer <- R6::R6Class(
       tryCatch({
         # Check if the model is a Vine Copula model
         if (inherits(fit, "BiCop")) {
-          # Generate a single prediction using VineCopula's BiCopSim
-          pred <- VineCopula::BiCopSim(1, family = fit$family, par = fit$par, par2 = fit$par2)
+          return(private$back_transform_vector(VineCopula::BiCopSim(1, family = fit$family, par = fit$par, par2 = fit$par2)))
         } else if (!is.null(fit@copula)) {
-          # Generate a single prediction using the copula package
-          pred <- copula::rCopula(1, fit@copula)
+          return(private$back_transform_vector(copula::rCopula(1, fit@copula)))
         } else {
           stop("Unsupported copula type for model '", model_name, "'.")
         }
-
-        # Assign column names if data is available
-        if (!is.null(self$data)) {
-          colnames(pred) <- colnames(self$data)
-        }
-        as.vector(pred)
       }, error = function(e) {
         message("Error in single instance prediction for model '", model_name, "': ", e$message)
         NULL
@@ -76,8 +68,7 @@ ModelScorer <- R6::R6Class(
         }
 
         # Convert to data.table and return
-        result <- data.table::as.data.table(pred)
-        return(result)
+        return(private$back_transform_dt(data.table::as.data.table(pred)))
       }, error = function(e) {
         message("Error in batch prediction for model '", model_name, "': ", e$message)
         NULL
@@ -118,15 +109,29 @@ ModelScorer <- R6::R6Class(
           future::plan(future::multisession, workers = num_threads)
 
           # Parallel processing with future_lapply, ensuring proper random number seeding
-          results <- future.apply::future_lapply(seq_len(batches), private$process_batch, future.seed = TRUE)
+          results <- future.apply::future_lapply(
+            seq_len(batches),
+            function(batch_id) {
+              private$process_batch(
+                batch_size = batch_size,
+                batch_id = batch_id
+              )
+            },
+            future.seed = TRUE
+          )
+
         } else {
           # Sequential processing
-          results <- lapply(seq_len(batches), private$process_batch)
+          results <- lapply(seq_len(batches), function(batch_id) {
+            private$process_batch(
+              batch_size = batch_size,
+              batch_id = batch_id
+            )
+          })
         }
 
         # Combine all batches into one data.table
-        final_result <- data.table::rbindlist(results)
-        return(final_result)
+        return(private$back_transform_dt(data.table::rbindlist(results)))
       }, error = function(e) {
         message("Error in large-scale simulation for model '", model_name, "': ", e$message)
         NULL
@@ -243,7 +248,7 @@ ModelScorer <- R6::R6Class(
 
       # Combine results into a single data.table
       if (length(results_list) > 0) {
-        final_results <- data.table::rbindlist(results_list, use.names = TRUE, fill = TRUE)
+        final_results <- private$back_transform_dt(data.table::rbindlist(results_list, use.names = TRUE, fill = TRUE))
         return(final_results)
       } else {
         warning("No predictions were generated. Please check your inputs.")
@@ -269,7 +274,7 @@ ModelScorer <- R6::R6Class(
     #'   - A `data.table` containing the hybrid simulation results for all values in the specified range.
     #'
     #' @param model_name Name of the model to use.
-    #' @param known_ranges Name of the variable to condition on.
+    #' @param known_ranges List with variable name as key and variable values as the list values
     #' @param n Number of instances to simulate for each known value.
     #' @param parallel Logical, whether to use parallel processing.
     #' @param threads Number of threads to use for parallel processing. Defaults to available cores minus one.
@@ -332,47 +337,40 @@ ModelScorer <- R6::R6Class(
         warning("No simulations were generated. Please check your inputs.")
         return(NULL)
       }
-    },
-
-    #' @description Perform importance sampling for the copula model.
-    #' @param model_name Name of the model to use.
-    #' @param n Number of samples to draw.
-    #' @return Weighted samples.
-    #' @export
-    importance_sampling = function(model_name, n = 1000) {
-      fit <- self$fit_results[[model_name]]
-      tryCatch({
-        samples <- copula::rCopula(n, fit@copula)
-        weights <- exp(-abs(samples))  # Example weighting; adjust as needed
-        list(Samples = samples, Weights = weights)
-      }, error = function(e) {
-        message("Error in importance sampling for model '", model_name, "': ", e$message)
-        NULL
-      })
-    },
-
-    #' @description Perform stress testing by simulating extreme events.
-    #' @param model_name Name of the model to use.
-    #' @param n Number of extreme event scenarios to simulate.
-    #' @return A data.table of extreme event simulations.
-    #' @export
-    stress_testing = function(model_name, n = 100) {
-      fit <- self$fit_results[[model_name]]
-      tryCatch({
-        extreme_events <- copula::rCopula(n, fit@copula)
-        extreme_events <- pmax(extreme_events, 0.95)  # Simulate upper tail
-        data.table::as.data.table(extreme_events)
-      }, error = function(e) {
-        message("Error in stress testing for model '", model_name, "': ", e$message)
-        NULL
-      })
     }
   ),
 
   private = list(
 
+    # Back-transform a vector
+    back_transform_vector = function(preds) {
+      marginals <- self$fit_results[["marginals"]]
+
+      # Ensure the vector length matches the number of marginals
+      if (length(preds) != length(marginals)) {
+        stop("The length of the prediction vector does not match the number of marginals.")
+      }
+
+      # Apply the inverse transformation for each element in the vector
+      result <- mapply(function(value, marginal) marginal(value), preds, marginals, SIMPLIFY = TRUE)
+      return(as.vector(result))
+    },
+
+    # Back-transform pseudo-observations to original data scale
+    back_transform_dt = function(preds) {
+      marginals <- self$fit_results[["marginals"]]
+
+      # Apply the inverse transformation for each column
+      for (col_name in names(marginals)) {
+        if (col_name %in% colnames(preds)) {
+          preds[, (col_name) := marginals[[col_name]](get(col_name))]
+        }
+      }
+      return(preds)
+    },
+
     # Private method for processing a single batch in batch_predictions()
-    process_batch = function(batch_id) {
+    process_batch = function(batch_size, batch_id) {
       message(sprintf("Processing batch %d", batch_id))
 
       # Generate batch data based on the copula type
@@ -505,16 +503,20 @@ ModelScorer <- R6::R6Class(
       tryCatch({
 
         # Perform conditional predictions
-        conditional <- private$conditional_prediction(
-          model_name = model_name,
-          known_values = known_values,
-          n = n
+        conditional <- private$back_transform_dt(
+          private$conditional_prediction(
+            model_name = model_name,
+            known_values = known_values,
+            n = n
+          )
         )
 
         # Perform unconditional predictions
-        unconditional <- self$batch_prediction(
-          model_name = model_name,
-          n = n
+        unconditional <- private$back_transform_dt(
+          self$batch_prediction(
+            model_name = model_name,
+            n = n
+          )
         )
 
         # Return both results

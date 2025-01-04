@@ -17,6 +17,8 @@ Provides a library of pre-defined copula models and tools for custom models.
 \describe{
 \item{\code{data}}{A data.table containing the dataset for modeling.}
 
+\item{\code{data_matrix}}{A matrix of post-transformed data for copula fitting}
+
 \item{\code{copula_library}}{A pre-defined library of copula models.}
 
 \item{\code{fit_results}}{A list to store results of copula fits.
