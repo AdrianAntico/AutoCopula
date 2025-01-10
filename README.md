@@ -8,10 +8,6 @@ Automated Copula Modeling and Exploratory Data Analysis in R
 [Download the AutoCopula Reference Manual](docs/AutoCopula-manual.pdf)
 
 
-#### Coming soon
-[Dockerfile can be found here](inst/shiny/Dockerfile)
-
-
 ---
 
 ## **Overview**
