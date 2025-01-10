@@ -66,10 +66,6 @@ install.packages("future.apply")
 devtools::install_github("AdrianAntico/AutoCopula")
 ```
 
-
-## AutoCopula Shiny App Demo
-https://github.com/user-attachments/assets/8640fc53-f69d-4114-ad0e-f8c7f64767e4
-
 ## Code Usage
 
 ### EDA
