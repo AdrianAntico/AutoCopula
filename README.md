@@ -38,10 +38,6 @@ AutoCopula is an R package designed for automating copula-based modeling, explor
   - Perform large-scale simulations for stress testing and scenario analysis.
   - Interactive and back-transformed predictions for real-world interpretability.
 
-- **Shiny App:**
-  - User-friendly interface for EDA, model fitting, and scoring.
-  - Fully integrated with AutoCopula features for interactive analysis.
-
 ---
 
 ## **Installation**
