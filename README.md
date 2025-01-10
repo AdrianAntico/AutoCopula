@@ -1,13 +1,14 @@
 ![Version:1.0.0](https://img.shields.io/static/v1?label=Version&message=1.0.0&color=blue&?style=plastic)
 [![metacran downloads](https://cranlogs.r-pkg.org/badges/last-week/AutoCopula)](https://cran.r-project.org/package=AutoCopula)
 
-<img src="https://raw.githubusercontent.com/AdrianAntico/AutoCopula/master/inst/Logo.PNG" align="center" width="800" />
-
 # **AutoCopula**
 Automated Copula Modeling and Exploratory Data Analysis in R
 
+
 [Download the AutoCopula Reference Manual](docs/AutoCopula-manual.pdf)
 
+
+#### Coming soon
 [Dockerfile can be found here](inst/shiny/Dockerfile)
 
 
@@ -65,60 +66,9 @@ install.packages("future.apply")
 devtools::install_github("AdrianAntico/AutoCopula")
 ```
 
-To run the Shiny app, ensure you have the following packages installed:
-`shiny`, `bs4Dash`, `readxl`, and `DT`.
-
-You can install them using:
-```R
-install.packages(c("shiny", "bs4Dash", "readxl", "DT"))
-```
 
 ## AutoCopula Shiny App Demo
 https://github.com/user-attachments/assets/8640fc53-f69d-4114-ad0e-f8c7f64767e4
-
-## Shiny App Usage
-
-### AutoCopula Shiny App
-The AutoCopula Shiny App provides an interactive and user-friendly interface for performing non-linear regression analysis without writing code.
-
-Key Features
-* Exploratory Data Analysis (EDA):
-  * Visualize variable distributions with customizable bin sizes and themes.
-  * Compute and display correlation matrices.
-  * Explore pairwise relationships using scatterplots and GAM (Generalized Additive Model) fits.
-* Model Fitting:
-  * Select and fit multiple non-linear regression models to your data.
-  * Evaluate models with metrics like R-squared and RMSE.
-  * Visualize and compare model fits side-by-side.
-* Scoring:
-  * Use fitted models to make predictions on new datasets.
-  * Compare scoring plots across multiple models.
-* Customization:
-  * Choose from a variety of plot themes.
-  * Interactively select variables and adjust model parameters.
-
-How to run the Shiny App:
-1. Install and load AutoCopula
-2. Launch the app with:
-```r
-run_shiny_app(launch_browser = TRUE)
-```
-3. Interact with the app:
-  * Use the sidebar to navigate between EDA, Model Fitting, and Scoring pages.
-  * Upload your dataset in CSV format and follow the prompts to generate insights and models.
-
-Example Walkthrough:
-* EDA Page:
-  * Upload a dataset (e.g., dummy_data.csv).
-  * Explore variable distributions, compute correlations, and generate scatterplots.
-* Model Fitting Page:
-  * Select predictor (X-Value) and target (Target) variables.
-  * Choose models to fit (e.g., Hill, Logistic).
-  * View model metrics and plots.
-* Scoring Page:
-  * Upload new data for scoring.
-  * Generate scoring plots to evaluate predictions.
-  * Visual Preview of the App
 
 ## Code Usage
 
