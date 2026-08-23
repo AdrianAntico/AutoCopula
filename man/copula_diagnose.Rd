@@ -13,7 +13,8 @@ copula_diagnose(fit, families = names(fit$models))
 }
 \value{
 A list containing fit coverage, AIC/BIC/log-likelihood and dependence
-metrics where supported, and retained fit failures.
+metrics where supported, vine pair-family tables and truncation notes, and
+retained fit failures.
 }
 \description{
 Diagnose fitted copula families

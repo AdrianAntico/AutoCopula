@@ -2,7 +2,6 @@
 #'
 #' An R6 class to score copula models on new data, perform predictions,
 #' generate simulations, and visualize the results.
-#' @export
 ModelScorer <- R6::R6Class(
   "ModelScorer",
   public = list(

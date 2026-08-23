@@ -30,7 +30,8 @@ copula_simulate(
 \item{threads}{Optional worker count.}
 }
 \value{
-A \code{data.table} on the original marginal scale.
+A \code{data.table} on the original marginal scale. Vine families are
+simulated with \code{VineCopula::RVineSim} from the stored \code{RVineMatrix}.
 }
 \description{
 Simulate from a fitted copula

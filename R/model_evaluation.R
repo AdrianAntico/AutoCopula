@@ -4,7 +4,6 @@
 #' Includes tools to generate tables of evaluation metrics and visualizations
 #' to assess model performance and dependence structure.
 #'
-#' @export
 ModelEvaluation <- R6::R6Class(
   "ModelEvaluation",
   public = list(

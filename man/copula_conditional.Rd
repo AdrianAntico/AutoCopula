@@ -31,7 +31,11 @@ original marginal scale.}
 \item{threads}{Optional worker count.}
 }
 \value{
-A \code{data.table} of conditional draws with batch identities.
+A \code{data.table} of conditional draws with batch identities. Vine
+conditionals use inverse h-functions or \code{RVineCondSim} when they apply to
+the fitted structure; otherwise Monte Carlo kernel SIR from
+\code{VineCopula::RVineSim} with recorded provenance. Analytic conditionals are
+never faked.
 }
 \description{
 Simulate a fitted conditional copula law

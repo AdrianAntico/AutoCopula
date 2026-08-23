@@ -3,7 +3,6 @@
 #' An R6 class for fitting and evaluating copula models.
 #' Provides a library of pre-defined copula models and tools for custom models.
 #'
-#' @export
 ModelFitter <- R6::R6Class(
   "ModelFitter",
   public = list(

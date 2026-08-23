@@ -2,7 +2,6 @@
 #'
 #' @description Provides tools for exploratory data analysis tailored to copula modeling.
 #'
-#' @export
 EDA <- R6::R6Class(
   "EDA",
   public = list(

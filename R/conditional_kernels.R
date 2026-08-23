@@ -201,7 +201,6 @@ autocopula_conditional_elliptical_u <- function(corr, known_indices, known_u,
 #' Checks analytic conditional moments, copula-scale support, Student-t tail
 #' behavior, and invalid conditioning contracts without requiring fitted models.
 #' @return A data table of qualification checks.
-#' @export
 qa_autocopula_conditional_elliptical <- function() {
   add <- function(check, passed, detail = "") data.table::data.table(
     check = check, passed = isTRUE(passed), detail = as.character(detail)[1L])
@@ -220,6 +219,19 @@ qa_autocopula_conditional_elliptical <- function() {
     "gaussian")
   invalid <- try(autocopula_conditional_elliptical_u(corr, 1L, 0.5, 10L,
     "t", df = -1), silent = TRUE)
+  catalog <- copula_families()
+  catalog_names <- unique(c(catalog$family, catalog$Model, names(catalog)))
+  fit_formals <- names(formals(copula_fit))
+  ns_exports <- tryCatch(getNamespaceExports("AutoCopula"),
+    error = function(e) character())
+  ns_path <- system.file("NAMESPACE", package = "AutoCopula")
+  ns_file_exports <- if (nzchar(ns_path)) {
+    ns_lines <- readLines(ns_path)
+    sub("^export\\((.*)\\)$", "\\1",
+      ns_lines[grepl("^export\\(", ns_lines)])
+  } else {
+    ns_exports
+  }
   out <- data.table::rbindlist(list(
     add("gaussian_latent_mean", abs(mean(z) - expected_mean) < 0.015,
       sprintf("mean=%.4f expected=%.4f", mean(z), expected_mean)),
@@ -230,7 +242,17 @@ qa_autocopula_conditional_elliptical <- function() {
       mean(tt[, 2L] > 0.99) > mean(g_tail[, 2L] > 0.99),
       sprintf("t=%.4f gaussian=%.4f", mean(tt[, 2L] > 0.99),
         mean(g_tail[, 2L] > 0.99))),
-    add("invalid_df_fails_closed", inherits(invalid, "try-error"))
+    add("invalid_df_fails_closed", inherits(invalid, "try-error")),
+    add("rvine_in_family_catalog", "RVine" %in% catalog_names,
+      paste(catalog$family, collapse = ", ")),
+    add("copula_fit_has_family_set", "family_set" %in% fit_formals,
+      paste(fit_formals, collapse = ", ")),
+    add("copula_fit_has_trunc_lvl", "trunc_lvl" %in% fit_formals,
+      paste(fit_formals, collapse = ", ")),
+    add("namespace_hides_modelfitter",
+      !"ModelFitter" %in% ns_file_exports &&
+        (length(ns_exports) > 20L || !"ModelFitter" %in% ns_exports),
+      paste(unique(c(ns_file_exports, ns_exports)), collapse = ", "))
   ))
   attr(out, "passed") <- all(out$passed)
   out

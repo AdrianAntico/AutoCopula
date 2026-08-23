@@ -74,12 +74,16 @@ devtools::install_github("AdrianAntico/AutoCopula")
 ### Preferred expert API
 
 The preferred workflow is `copula_fit()` -> `copula_simulate()` or
-`copula_conditional()` -> `copula_diagnose()`. The original R6 classes remain
-available for compatibility and low-level mutable workflows.
+`copula_conditional()` -> `copula_diagnose()`. Use `copula_families()` to
+inspect the built-in catalog, including first-class vines. The original R6
+classes remain available internally (`AutoCopula:::ModelFitter`) for low-level
+mutable workflows.
 
 ```r
 library(AutoCopula)
 library(data.table)
+
+copula_families()
 
 set.seed(42)
 z <- matrix(rnorm(2000), ncol = 2L)
@@ -90,7 +94,7 @@ data <- data.table(
 
 fit <- copula_fit(
   data,
-  families = c("Gaussian", "tCopula", "Clayton", "Gumbel", "Frank")
+  families = c("Gaussian", "tCopula", "Clayton", "Gumbel", "Frank", "RVine")
 )
 
 draws <- copula_simulate(
@@ -112,7 +116,9 @@ diagnostics <- copula_diagnose(fit)
 ```
 
 Family identity is never erased. Gaussian, Student-t, Archimedean, extreme
-value, BB, rotated, and Tawn families remain selectable by name. Advanced users
+value, BB, rotated, Tawn, and vine (`RVine` / `CVine` / `DVine`) families remain
+selectable by name. `d > 2` Clayton/Gumbel/Frank/Joe fits from the copula
+package are exchangeable; pair-specific tails require a vine. Advanced users
 can extend or override a family through `family_definitions`, supplying an
 engine-native `fit_function(data)` with its consequential controls captured in
 the closure. Conditional simulation uses each fitted family's qualified law;
@@ -141,8 +147,8 @@ data <- data.table(
   Var3 = correlated_data[, 3]
 )
 
-# Initialize EDA class
-eda <- EDA$new(data)
+# Initialize EDA class (unexported; preferred API is copula_*)
+eda <- AutoCopula:::EDA$new(data)
 
 # Generate correlation matrix
 eda$correlate()
@@ -161,10 +167,11 @@ eda$generate_3d_density_plot("Var1", "Var2", "Var3")
 ### Model Fitting
 
 ```r
-# Initialize ModelFitter
-fitter <- ModelFitter$new(data)
+# Initialize ModelFitter (unexported; preferred API is copula_fit())
+fitter <- AutoCopula:::ModelFitter$new(data)
 
-# List available copula models and their info
+# Preferred: copula_families(). Low-level: fitter$list_models()
+copula_families()
 fitter$list_models()
 
 # List just the model names
@@ -177,8 +184,8 @@ fitter$fit_models(c("Gaussian", "Clayton", "Frank"))
 ### Model Evaluation
 
 ```r
-# Initialize ModelEvaluation
-evaluator <- ModelEvaluation$new(fit_results = fitter$fit_results, data = data)
+# Initialize ModelEvaluation (unexported; preferred API is copula_diagnose())
+evaluator <- AutoCopula:::ModelEvaluation$new(fit_results = fitter$fit_results, data = data)
 
 # Generate evaluation metrics
 metrics <- evaluator$generate_metrics()
@@ -190,8 +197,9 @@ plots <- evaluator$generate_overlay_plot(model_name = "Gaussian")
 ### Model Scoring
 
 ```r
-# Initialize ModelScorer
-scorer <- ModelScorer$new(fit_results = fitter$fit_results, data = data)
+# Initialize ModelScorer (unexported; preferred API is copula_simulate() /
+# copula_conditional())
+scorer <- AutoCopula:::ModelScorer$new(fit_results = fitter$fit_results, data = data)
 
 # Single instance prediction
 scorer$single_instance_prediction(model_name = "Gaussian")

@@ -7,6 +7,10 @@
 copula_fit(
   data,
   families = c("Gaussian", "tCopula"),
+  family_set = NULL,
+  trunc_lvl = NA_integer_,
+  treecrit = "tau",
+  vine_type = "rvine",
   family_definitions = list()
 )
 }
@@ -14,7 +18,23 @@ copula_fit(
 \item{data}{A \code{data.table} of continuous variables.}
 
 \item{families}{Character vector of explicit copula families. Use
-\code{ModelFitter$new(data)$list_models()} to inspect the complete built-in set.}
+\code{\link{copula_families}} to inspect the complete built-in set, including vines.
+May include \code{"RVine"}, \code{"vine"}, \code{"CVine"}, or \code{"DVine"}.}
+
+\item{family_set}{VineCopula pair-copula family codes or names used when a
+vine family is requested. The default is a serious set: Gaussian, t,
+Clayton, Gumbel, Frank, Joe, BB1, BB7, and their survival (180-degree)
+rotations. It is not Gaussian+t only.}
+
+\item{trunc_lvl}{Vine truncation level passed to VineCopula. \code{NA} fits all
+trees.}
+
+\item{treecrit}{Tree-selection criterion for R-/C-vine structure selection
+(\code{"tau"} by default).}
+
+\item{vine_type}{Structure used when \code{families} contains the generic
+\code{"vine"} alias: \code{"rvine"} (default), \code{"cvine"}, or \code{"dvine"}.
+\code{"RVine"}, \code{"CVine"}, and \code{"DVine"} family names override this.}
 
 \item{family_definitions}{Optional named model definitions, each containing a
 description and \code{fit_function(data)}. These extend or override the built-in
@@ -23,10 +43,17 @@ compact public API.}
 }
 \value{
 An \code{autocopula_fit} with fitted family models, marginal transforms,
-source data, fit failures, and the underlying \code{ModelFitter}.
+source data, fit failures, and the underlying \code{ModelFitter}. Vine fits
+store the \code{RVineMatrix} on the model object.
 }
 \description{
 Preferred expert fitting entry point. Family identity is explicit and the
 returned object retains fitted models, empirical marginal transforms, source
 data, and the underlying fitter for advanced inspection.
+
+Vines (\code{"RVine"}, \code{"vine"}, \code{"CVine"}, \code{"DVine"}) are first-class families.
+They are the multivariate nonexchangeable path: each pair (and conditional
+pair) may have its own copula family and tail behavior. Clayton, Gumbel,
+Frank, and Joe fits from the copula package remain exchangeable for \code{d > 2};
+experts who need pair-specific tails should request a vine.
 }
