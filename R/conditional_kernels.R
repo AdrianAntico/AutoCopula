@@ -37,11 +37,12 @@ autocopula_conditional_bicop_u <- function(known_u, known_index, n, family,
   }
   known_u <- autocopula_clamp_u(known_u)
   probability <- autocopula_clamp_u(stats::runif(as.integer(n)))
+  known_vector <- rep(known_u, length(probability))
   sampled <- if (known_index == 1L) {
-    VineCopula::BiCopHinv1(known_u, probability, family = family,
+    VineCopula::BiCopHinv1(known_vector, probability, family = family,
       par = par, par2 = par2)
   } else {
-    VineCopula::BiCopHinv2(probability, known_u, family = family,
+    VineCopula::BiCopHinv2(probability, known_vector, family = family,
       par = par, par2 = par2)
   }
   autocopula_clamp_u(sampled)
@@ -112,7 +113,7 @@ qa_autocopula_conditional_bicop <- function() {
   checks <- lapply(names(specifications), function(label) {
     spec <- specifications[[label]]
     probability <- seq(0.01, 0.99, length.out = 199L)
-    known <- 0.83
+    known <- rep(0.83, length(probability))
     sampled_2 <- VineCopula::BiCopHinv1(known, probability,
       family = spec[["family"]], par = spec[["par"]], par2 = spec[["par2"]])
     sampled_1 <- VineCopula::BiCopHinv2(probability, known,

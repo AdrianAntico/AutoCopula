@@ -71,6 +71,53 @@ devtools::install_github("AdrianAntico/AutoCopula")
 
 ## Code Usage
 
+### Preferred expert API
+
+The preferred workflow is `copula_fit()` -> `copula_simulate()` or
+`copula_conditional()` -> `copula_diagnose()`. The original R6 classes remain
+available for compatibility and low-level mutable workflows.
+
+```r
+library(AutoCopula)
+library(data.table)
+
+set.seed(42)
+z <- matrix(rnorm(2000), ncol = 2L)
+data <- data.table(
+  demand = z[, 1L],
+  cost = 0.7 * z[, 1L] + sqrt(1 - 0.7^2) * z[, 2L]
+)
+
+fit <- copula_fit(
+  data,
+  families = c("Gaussian", "tCopula", "Clayton", "Gumbel", "Frank")
+)
+
+draws <- copula_simulate(
+  fit,
+  family = "tCopula",
+  n = 5000L,
+  seed = 42L
+)
+
+conditional <- copula_conditional(
+  fit,
+  family = "tCopula",
+  known_ranges = list(demand = c(-1, 0, 1)),
+  n = 1000L,
+  seed = 42L
+)
+
+diagnostics <- copula_diagnose(fit)
+```
+
+Family identity is never erased. Gaussian, Student-t, Archimedean, extreme
+value, BB, rotated, and Tawn families remain selectable by name. Advanced users
+can extend or override a family through `family_definitions`, supplying an
+engine-native `fit_function(data)` with its consequential controls captured in
+the closure. Conditional simulation uses each fitted family's qualified law;
+unsupported combinations fail rather than silently substituting independence.
+
 ### EDA
 
 ```r
