@@ -540,7 +540,7 @@ ModelScorer <- R6::R6Class(
       known_indices <- match(known_vars, colnames(self$data))
       remaining_indices <- setdiff(seq_len(dim), known_indices)
 
-      # Convert known_values to pseudo-observations
+      # Convert known values to copula-scale pseudo-observations.
       known_u <- sapply(known_vars, function(col) {
         value <- known_values[[col]]
         if (!col %in% colnames(self$data)) {
@@ -550,24 +550,8 @@ ModelScorer <- R6::R6Class(
         ecdf(self$data[[col]])(value)  # Convert to pseudo-observations
       })
 
-      # Extract and partition the correlation matrix
-      corr_11 <- corr[known_indices, known_indices, drop = FALSE]
-      corr_12 <- corr[known_indices, remaining_indices, drop = FALSE]
-      corr_22 <- corr[remaining_indices, remaining_indices, drop = FALSE]
-      corr_21 <- t(corr_12)
-
-      # Compute the conditional mean and covariance
-      inv_corr_11 <- solve(corr_11)
-      conditional_mean <- corr_21 %*% inv_corr_11 %*% known_u
-      conditional_cov <- corr_22 - corr_21 %*% inv_corr_11 %*% corr_12
-
-      # Generate conditional samples
-      conditional_samples <- mvtnorm::rmvnorm(n, mean = as.vector(conditional_mean), sigma = conditional_cov)
-
-      # Combine known and conditional values
-      result <- matrix(NA, nrow = n, ncol = dim)
-      result[, known_indices] <- matrix(rep(known_u, each = n), nrow = n)
-      result[, remaining_indices] <- conditional_samples
+      result <- autocopula_conditional_elliptical_u(corr, known_indices,
+        known_u, n, family = "gaussian")
       result_dt <- data.table::as.data.table(result)
       data.table::setnames(result_dt, colnames(self$data))
       return(result_dt)
@@ -577,7 +561,7 @@ ModelScorer <- R6::R6Class(
     conditional_t = function(fit, known_values, n = 1) {
       copula_model <- fit@copula
       dim <- dim(copula_model)
-      df <- copula_model@parameters[[2]]  # Degrees of freedom
+      df <- as.numeric(utils::tail(copula_model@parameters, 1L))
 
       # Reconstruct the correlation matrix
       corr <- copula::getSigma(copula_model)
@@ -597,29 +581,8 @@ ModelScorer <- R6::R6Class(
         ecdf(self$data[[col]])(value)  # Convert to pseudo-observations
       })
 
-      # Extract and partition the correlation matrix
-      corr_11 <- corr[known_indices, known_indices, drop = FALSE]
-      corr_12 <- corr[known_indices, remaining_indices, drop = FALSE]
-      corr_22 <- corr[remaining_indices, remaining_indices, drop = FALSE]
-      corr_21 <- t(corr_12)
-
-      # Compute the conditional mean and covariance
-      inv_corr_11 <- solve(corr_11)
-      conditional_mean <- corr_21 %*% inv_corr_11 %*% known_u
-      conditional_cov <- corr_22 - corr_21 %*% inv_corr_11 %*% corr_12
-
-      # Generate conditional samples using mvtnorm::rmvt
-      conditional_samples <- mvtnorm::rmvt(
-        n = n,
-        delta = as.vector(conditional_mean),
-        sigma = conditional_cov,
-        df = df
-      )
-
-      # Combine known and conditional values
-      result <- matrix(NA, nrow = n, ncol = dim)
-      result[, known_indices] <- matrix(rep(known_u, each = n), nrow = n)
-      result[, remaining_indices] <- conditional_samples
+      result <- autocopula_conditional_elliptical_u(corr, known_indices,
+        known_u, n, family = "t", df = df)
       result_dt <- data.table::as.data.table(result)
       data.table::setnames(result_dt, colnames(self$data))
       return(result_dt)

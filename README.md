@@ -36,6 +36,15 @@ AutoCopula is an R package designed for automating copula-based modeling, explor
   - Perform large-scale simulations for stress testing and scenario analysis.
   - Interactive and back-transformed predictions for real-world interpretability.
 
+### Conditional elliptical laws
+
+Gaussian and Student-t conditional simulation is performed in latent
+elliptical space and transformed back to copula uniforms before marginal
+inversion. Student-t conditioning uses the fitted degrees of freedom, the
+number of conditioned variables, and the conditional scale adjustment. This
+preserves fitted tail behavior and keeps values in `(0, 1)` before marginal
+back-transformation.
+
 ---
 
 ## **Installation**
