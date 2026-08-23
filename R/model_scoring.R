@@ -443,13 +443,8 @@ ModelScorer <- R6::R6Class(
           return(private$conditional_frank(fit, known_values, n))
         } else if (inherits(copula_model, "joeCopula")) {
           return(private$conditional_joe(fit, known_values, n))
-        } else if (model_name %in% c("BB1", "BB6", "BB7", "BB8")) {
-          conditional_function <- private[[paste0("conditional_", tolower(model_name))]]
-          return(conditional_function(fit, known_values, n))
-        } else if (grepl("Rotated", model_name)) {
-          # Rotated copulas (e.g., Rotated Clayton (180))
-          model_key <- gsub("[()\\s]", "_", tolower(model_name))
-          conditional_function <- private[[paste0("conditional_", model_key)]]
+        } else if (model_name %in% names(autocopula_bicop_dispatch())) {
+          conditional_function <- private[[autocopula_bicop_dispatch()[[model_name]]]]
           return(conditional_function(fit, known_values, n))
         } else {
           message("Conditional sampling is not implemented for this copula type.")
@@ -609,17 +604,8 @@ ModelScorer <- R6::R6Class(
         ecdf(self$data[[col]])(value)  # Convert to pseudo-observations
       })
 
-      # Compute the conditional distribution
-      V <- sum(known_u^(-theta)) - length(known_u) + 1  # Intermediate value
-      conditional_samples <- replicate(n, {
-        W <- stats::runif(length(remaining_indices))
-        (V + W)^(-1 / theta)
-      })
-
-      # Combine known and conditional values
-      result <- matrix(NA, nrow = n, ncol = dim)
-      result[, known_indices] <- matrix(rep(known_u, each = n), nrow = n)
-      result[, remaining_indices] <- t(conditional_samples)
+      result <- autocopula_conditional_archimedean_u(
+        copula_model, known_indices, known_u, n)
       result_dt <- data.table::as.data.table(result)
       data.table::setnames(result_dt, colnames(self$data))
       return(result_dt)
@@ -646,17 +632,8 @@ ModelScorer <- R6::R6Class(
         ecdf(self$data[[col]])(value)  # Convert to pseudo-observations
       })
 
-      # Compute the conditional distribution
-      V <- sum((-log(known_u))^(1 / theta))  # Intermediate value
-      conditional_samples <- replicate(n, {
-        W <- stats::runif(length(remaining_indices))
-        exp(-(V - log(W))^theta)
-      })
-
-      # Combine known and conditional values
-      result <- matrix(NA, nrow = n, ncol = dim)
-      result[, known_indices] <- matrix(rep(known_u, each = n), nrow = n)
-      result[, remaining_indices] <- t(conditional_samples)
+      result <- autocopula_conditional_archimedean_u(
+        copula_model, known_indices, known_u, n)
       result_dt <- data.table::as.data.table(result)
       data.table::setnames(result_dt, colnames(self$data))
       return(result_dt)
@@ -683,20 +660,8 @@ ModelScorer <- R6::R6Class(
         ecdf(self$data[[col]])(value)  # Convert to pseudo-observations
       })
 
-      # Compute intermediate value (joint generator evaluation)
-      D_inv <- function(x) -log((exp(-theta * x) - 1) / (exp(-theta) - 1))
-      V <- -log(1 + (exp(-theta * sum(D_inv(known_u))) - 1) / (exp(-theta) - 1))
-
-      # Generate conditional samples
-      conditional_samples <- replicate(n, {
-        W <- stats::runif(length(remaining_indices))
-        -log(1 + (exp(-theta * V) * (W - 1)) / (W * (exp(-theta) - 1))) / theta
-      })
-
-      # Combine known and conditional values
-      result <- matrix(NA, nrow = n, ncol = dim)
-      result[, known_indices] <- matrix(rep(known_u, each = n), nrow = n)
-      result[, remaining_indices] <- t(conditional_samples)
+      result <- autocopula_conditional_archimedean_u(
+        copula_model, known_indices, known_u, n)
       result_dt <- data.table::as.data.table(result)
       data.table::setnames(result_dt, colnames(self$data))
       return(result_dt)
@@ -723,19 +688,8 @@ ModelScorer <- R6::R6Class(
         ecdf(self$data[[col]])(value)  # Convert to pseudo-observations
       })
 
-      # Compute intermediate value (generator evaluation for known values)
-      V <- sum((1 - known_u)^(-theta)) - length(known_u) + 1  # Joint dependence value
-
-      # Generate conditional samples
-      conditional_samples <- replicate(n, {
-        W <- stats::runif(length(remaining_indices))
-        1 - (V + (1 - W)^(-theta))^(-1 / theta)
-      })
-
-      # Combine known and conditional values
-      result <- matrix(NA, nrow = n, ncol = dim)
-      result[, known_indices] <- matrix(rep(known_u, each = n), nrow = n)
-      result[, remaining_indices] <- t(conditional_samples)
+      result <- autocopula_conditional_archimedean_u(
+        copula_model, known_indices, known_u, n)
       result_dt <- data.table::as.data.table(result)
       data.table::setnames(result_dt, colnames(self$data))
       return(result_dt)
@@ -969,18 +923,8 @@ ModelScorer <- R6::R6Class(
       # Convert known_values to pseudo-observations
       known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
 
-      # Generate conditional samples
-      conditional_samples <- replicate(n, {
-        W <- runif(1)  # Random uniform value for conditional sampling
-
-        if (known_index == 1) {
-          # u1 is known, solve for u2
-          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 7, par = theta, par2 = delta)
-        } else {
-          # u2 is known, solve for u1
-          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 7, par = theta, par2 = delta)
-        }
-      })
+      conditional_samples <- autocopula_conditional_bicop_u(
+        known_u, known_index, n, family = 7, par = theta, par2 = delta)
 
       # Combine known and conditional values
       result <- matrix(NA, nrow = n, ncol = 2)
@@ -992,7 +936,7 @@ ModelScorer <- R6::R6Class(
     },
 
     # BB6 Conditional Sampling
-    conditional_bb2 = function(fit, known_values, n = 1) {
+    conditional_bb6 = function(fit, known_values, n = 1) {
       theta <- fit$par  # Dependence parameter theta
       delta <- fit$par2  # Tail dependence parameter delta
 
@@ -1020,17 +964,8 @@ ModelScorer <- R6::R6Class(
       known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
 
       # Generate conditional samples
-      conditional_samples <- replicate(n, {
-        W <- runif(1)  # Random uniform value for conditional sampling
-
-        if (known_index == 1) {
-          # u1 is known, solve for u2
-          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 8, par = theta, par2 = delta)
-        } else {
-          # u2 is known, solve for u1
-          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 8, par = theta, par2 = delta)
-        }
-      })
+      conditional_samples <- autocopula_conditional_bicop_u(
+        known_u, known_index, n, family = 8, par = theta, par2 = delta)
 
       # Combine known and conditional values
       result <- matrix(NA, nrow = n, ncol = 2)
@@ -1042,7 +977,7 @@ ModelScorer <- R6::R6Class(
     },
 
     # BB7 Conditional Sampling
-    conditional_bb3 = function(fit, known_values, n = 1) {
+    conditional_bb7 = function(fit, known_values, n = 1) {
       theta <- fit$par  # Dependence parameter theta
       delta <- fit$par2  # Tail dependence parameter delta
 
@@ -1071,17 +1006,8 @@ ModelScorer <- R6::R6Class(
       known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
 
       # Generate conditional samples
-      conditional_samples <- replicate(n, {
-        W <- runif(1)  # Random uniform value for conditional sampling
-
-        if (known_index == 1) {
-          # u1 is known, solve for u2
-          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 9, par = theta, par2 = delta)
-        } else {
-          # u2 is known, solve for u1
-          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 9, par = theta, par2 = delta)
-        }
-      })
+      conditional_samples <- autocopula_conditional_bicop_u(
+        known_u, known_index, n, family = 9, par = theta, par2 = delta)
 
       # Combine known and conditional values
       result <- matrix(NA, nrow = n, ncol = 2)
@@ -1121,17 +1047,8 @@ ModelScorer <- R6::R6Class(
       known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
 
       # Generate conditional samples
-      conditional_samples <- replicate(n, {
-        W <- runif(1)  # Random uniform value for conditional sampling
-
-        if (known_index == 1) {
-          # u1 is known, solve for u2
-          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 10, par = theta, par2 = delta)
-        } else {
-          # u2 is known, solve for u1
-          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 10, par = theta, par2 = delta)
-        }
-      })
+      conditional_samples <- autocopula_conditional_bicop_u(
+        known_u, known_index, n, family = 10, par = theta, par2 = delta)
 
       # Combine known and conditional values
       result <- matrix(NA, nrow = n, ncol = 2)
@@ -1166,17 +1083,8 @@ ModelScorer <- R6::R6Class(
       known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
 
       # Generate conditional samples
-      conditional_samples <- replicate(n, {
-        W <- runif(1)  # Random uniform value for conditional sampling
-
-        if (known_index == 1) {
-          # u1 is known, solve for u2
-          ((1 - W) * (1 - known_u^(-theta)) + known_u^(-theta))^(-1 / theta)
-        } else {
-          # u2 is known, solve for u1
-          (known_u^(-theta) - (1 - W) * (known_u^(-theta) - 1))^(-1 / theta)
-        }
-      })
+      conditional_samples <- autocopula_conditional_bicop_u(
+        known_u, known_index, n, family = 13, par = theta)
 
       # Combine known and conditional values
       result <- matrix(NA, nrow = n, ncol = 2)
@@ -1211,17 +1119,8 @@ ModelScorer <- R6::R6Class(
       known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
 
       # Generate conditional samples
-      conditional_samples <- replicate(n, {
-        W <- runif(1)  # Random uniform value for conditional sampling
-
-        if (known_index == 1) {
-          # u1 is known, solve for u2
-          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 14, par = theta)
-        } else {
-          # u2 is known, solve for u1
-          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 14, par = theta)
-        }
-      })
+      conditional_samples <- autocopula_conditional_bicop_u(
+        known_u, known_index, n, family = 14, par = theta)
 
       # Combine known and conditional values
       result <- matrix(NA, nrow = n, ncol = 2)
@@ -1256,17 +1155,8 @@ ModelScorer <- R6::R6Class(
       known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
 
       # Generate conditional samples
-      conditional_samples <- replicate(n, {
-        W <- runif(1)  # Random uniform value for conditional sampling
-
-        if (known_index == 1) {
-          # u1 is known, solve for u2
-          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 16, par = theta)
-        } else {
-          # u2 is known, solve for u1
-          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 16, par = theta)
-        }
-      })
+      conditional_samples <- autocopula_conditional_bicop_u(
+        known_u, known_index, n, family = 16, par = theta)
 
       # Combine known and conditional values
       result <- matrix(NA, nrow = n, ncol = 2)
@@ -1306,17 +1196,8 @@ ModelScorer <- R6::R6Class(
       known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
 
       # Generate conditional samples
-      conditional_samples <- replicate(n, {
-        W <- runif(1)  # Random uniform value for conditional sampling
-
-        if (known_index == 1) {
-          # u1 is known, solve for u2
-          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 17, par = theta, par2 = delta)
-        } else {
-          # u2 is known, solve for u1
-          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 17, par = theta, par2 = delta)
-        }
-      })
+      conditional_samples <- autocopula_conditional_bicop_u(
+        known_u, known_index, n, family = 17, par = theta, par2 = delta)
 
       # Combine known and conditional values
       result <- matrix(NA, nrow = n, ncol = 2)
@@ -1356,17 +1237,8 @@ ModelScorer <- R6::R6Class(
       known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
 
       # Generate conditional samples
-      conditional_samples <- replicate(n, {
-        W <- runif(1)  # Random uniform value for conditional sampling
-
-        if (known_index == 1) {
-          # u1 is known, solve for u2
-          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 18, par = theta, par2 = delta)
-        } else {
-          # u2 is known, solve for u1
-          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 18, par = theta, par2 = delta)
-        }
-      })
+      conditional_samples <- autocopula_conditional_bicop_u(
+        known_u, known_index, n, family = 18, par = theta, par2 = delta)
 
       # Combine known and conditional values
       result <- matrix(NA, nrow = n, ncol = 2)
@@ -1406,17 +1278,8 @@ ModelScorer <- R6::R6Class(
       known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
 
       # Generate conditional samples
-      conditional_samples <- replicate(n, {
-        W <- runif(1)  # Random uniform value for conditional sampling
-
-        if (known_index == 1) {
-          # u1 is known, solve for u2
-          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 19, par = theta, par2 = delta)
-        } else {
-          # u2 is known, solve for u1
-          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 19, par = theta, par2 = delta)
-        }
-      })
+      conditional_samples <- autocopula_conditional_bicop_u(
+        known_u, known_index, n, family = 19, par = theta, par2 = delta)
 
       # Combine known and conditional values
       result <- matrix(NA, nrow = n, ncol = 2)
@@ -1456,17 +1319,8 @@ ModelScorer <- R6::R6Class(
       known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
 
       # Generate conditional samples
-      conditional_samples <- replicate(n, {
-        W <- runif(1)  # Random uniform value for conditional sampling
-
-        if (known_index == 1) {
-          # u1 is known, solve for u2
-          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 20, par = theta, par2 = delta)
-        } else {
-          # u2 is known, solve for u1
-          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 20, par = theta, par2 = delta)
-        }
-      })
+      conditional_samples <- autocopula_conditional_bicop_u(
+        known_u, known_index, n, family = 20, par = theta, par2 = delta)
 
       # Combine known and conditional values
       result <- matrix(NA, nrow = n, ncol = 2)
@@ -1506,17 +1360,8 @@ ModelScorer <- R6::R6Class(
       known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
 
       # Generate conditional samples
-      conditional_samples <- replicate(n, {
-        W <- runif(1)  # Random uniform value for conditional sampling
-
-        if (known_index == 1) {
-          # u1 is known, solve for u2
-          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 104, par = theta, par2 = delta)
-        } else {
-          # u2 is known, solve for u1
-          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 104, par = theta, par2 = delta)
-        }
-      })
+      conditional_samples <- autocopula_conditional_bicop_u(
+        known_u, known_index, n, family = 104, par = theta, par2 = delta)
 
       # Combine known and conditional values
       result <- matrix(NA, nrow = n, ncol = 2)
@@ -1556,17 +1401,8 @@ ModelScorer <- R6::R6Class(
       known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
 
       # Generate conditional samples
-      conditional_samples <- replicate(n, {
-        W <- runif(1)  # Random uniform value for conditional sampling
-
-        if (known_index == 1) {
-          # u1 is known, solve for u2
-          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 114, par = theta, par2 = delta)
-        } else {
-          # u2 is known, solve for u1
-          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 114, par = theta, par2 = delta)
-        }
-      })
+      conditional_samples <- autocopula_conditional_bicop_u(
+        known_u, known_index, n, family = 114, par = theta, par2 = delta)
 
       # Combine known and conditional values
       result <- matrix(NA, nrow = n, ncol = 2)
@@ -1606,17 +1442,8 @@ ModelScorer <- R6::R6Class(
       known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
 
       # Generate conditional samples
-      conditional_samples <- replicate(n, {
-        W <- runif(1)  # Random uniform value for conditional sampling
-
-        if (known_index == 1) {
-          # u1 is known, solve for u2
-          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 204, par = theta, par2 = delta)
-        } else {
-          # u2 is known, solve for u1
-          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 204, par = theta, par2 = delta)
-        }
-      })
+      conditional_samples <- autocopula_conditional_bicop_u(
+        known_u, known_index, n, family = 204, par = theta, par2 = delta)
 
       # Combine known and conditional values
       result <- matrix(NA, nrow = n, ncol = 2)
@@ -1656,17 +1483,8 @@ ModelScorer <- R6::R6Class(
       known_u <- ecdf(self$data[[known_var]])(known_values[[1]])
 
       # Generate conditional samples
-      conditional_samples <- replicate(n, {
-        W <- runif(1)  # Random uniform value for conditional sampling
-
-        if (known_index == 1) {
-          # u1 is known, solve for u2
-          VineCopula::BiCopHfunc2(u1 = known_u, u2 = W, family = 214, par = theta, par2 = delta)
-        } else {
-          # u2 is known, solve for u1
-          VineCopula::BiCopHfunc(u1 = W, u2 = known_u, family = 214, par = theta, par2 = delta)
-        }
-      })
+      conditional_samples <- autocopula_conditional_bicop_u(
+        known_u, known_index, n, family = 214, par = theta, par2 = delta)
 
       # Combine known and conditional values
       result <- matrix(NA, nrow = n, ncol = 2)
